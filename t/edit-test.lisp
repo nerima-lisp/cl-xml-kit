@@ -69,6 +69,11 @@ laid out on one line and on separate lines.")
 (defun edit-delete (path &rest options)
   (apply #'edit-xml-delete +edit-source+ path options))
 
+(defun path-syntax-error-index (thunk)
+  "Return the index of the :SYNTAX error that THUNK signals."
+  (handler-case (progn (funcall thunk) nil)
+    (xml-path-error (caught) (xml-path-error-index caught))))
+
 (defun edit-line-break-and-indent (indent)
   (concatenate 'string +spans-crlf+ (make-string indent :initial-element #\Space)))
 
@@ -333,9 +338,27 @@ laid out on one line and on separate lines.")
 
 (it "refuses an edit whose result breaks a limit of the caller"
   (let ((limits (make-xml-resource-limits :max-attributes-per-element 1)))
-    (expect (handler-case (edit-xml-set "<a x=\"1\"/>" "/a/@y" "2" :resource-limits limits)
-              (xml-unsupported-edit (caught) (xml-edit-error-reason caught)))
-            :to-equal :verification-failed)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-set "<a x=\"1\"/>" "/a/@y" "2" :resource-limits limits)))
+            :to-equal '(xml-edit-value-error :resource-limit "/a/@y"))))
+
+(it "keeps the limit that the edited document broke as the cause"
+  (let ((condition (handler-case
+                       (edit-xml-set "<a x=\"1\"/>" "/a/@y" "2"
+                                     :resource-limits
+                                     (make-xml-resource-limits :max-attributes-per-element 1))
+                     (xml-edit-value-error (caught) caught))))
+    (expect (xml-resource-limit-exceeded-kind (xml-edit-value-error-cause condition))
+            :to-equal :max-attributes-per-element)))
+
+(it "refuses text that is longer than the text node limit of the caller"
+  (let ((limits (make-xml-resource-limits :max-text-node-length 5)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-set "<r><a>x</a></r>" "/r/a/text()" "abcdef"
+                                          :resource-limits limits)))
+            :to-equal '(xml-edit-value-error :resource-limit "/r/a/text()"))
+    (expect (edit-xml-set "<r><a>x</a></r>" "/r/a/text()" "abcde" :resource-limits limits)
+            :to-equal "<r><a>abcde</a></r>")))
 
 (it "rejects a source, path, or value that is not a string with an input error"
   (dolist (thunk (list (lambda () (edit-xml-set 42 "/a/@x" "v"))
@@ -503,21 +526,21 @@ laid out on one line and on separate lines.")
                             (edit-xml-set "<r xmlns:p=\"urn:p\"><a/></r>" "/r/a"
                                           "<b x=\"1\" y=\"2\" z=\"3\" w=\"4\"/>"
                                           :resource-limits limits)))
-            :to-equal '(xml-edit-value-error :malformed-fragment "/r/a"))))
+            :to-equal '(xml-edit-value-error :resource-limit "/r/a"))))
 
 (it "refuses a fragment that is too deep for the wrapper it is parsed in"
   (let ((limits (make-xml-resource-limits :max-depth 3)))
     (expect (edit-refusal (lambda ()
                             (edit-xml-set "<r><x><y/></x></r>" "/r/x/y" "<a><b><c/></b></a>"
                                           :resource-limits limits)))
-            :to-equal '(xml-edit-value-error :malformed-fragment "/r/x/y"))))
+            :to-equal '(xml-edit-value-error :resource-limit "/r/x/y"))))
 
 (it "refuses a fragment that fits alone but exceeds the depth limit where it lands"
   (let ((limits (make-xml-resource-limits :max-depth 3)))
     (expect (edit-refusal (lambda ()
                             (edit-xml-set "<r><x><y/></x></r>" "/r/x/y" "<a><b/></a>"
                                           :resource-limits limits)))
-            :to-equal '(xml-unsupported-edit :verification-failed "/r/x/y"))
+            :to-equal '(xml-edit-value-error :resource-limit "/r/x/y"))
     (expect (edit-xml-set "<r><x><y/></x></r>" "/r/x" "<a><b/></a>" :resource-limits limits)
             :to-equal "<r><a><b/></a></r>")))
 
@@ -616,6 +639,164 @@ laid out on one line and on separate lines.")
 (it "refuses to delete below an element that references a markup entity"
   (expect (edit-refusal (lambda () (edit-delete "/root/holder/b")))
           :to-equal '(xml-unsupported-edit :entity-reference "/root/holder/b")))
+
+;;; Appending an element
+
+(defun edit-append (path fragment &rest options)
+  (apply #'edit-xml-append +edit-source+ path fragment options))
+
+(it "appends after the last child, copying the line break and indentation of the children"
+  (expect (edit-append "/root/list" "<added/>")
+          :to-equal (edit-expected "state=\"on\"/>"
+                                   (concatenate 'string (edit-line-break-and-indent 4) "<added/>")
+                                   :offset 12 :length 0)))
+
+(it "appends to the document element after its last node, which is not an element"
+  (expect (edit-append "/root" "<added/>")
+          :to-equal (edit-expected "<?inner pi?>"
+                                   (concatenate 'string (edit-line-break-and-indent 2) "<added/>")
+                                   :offset 12 :length 0)))
+
+(it "gives an empty element a start tag end, the fragment, and an end tag, keeping the rest of the tag"
+  (expect (edit-append "/root/bare" "<n/>")
+          :to-equal (edit-expected "<bare/>" "><n/></bare>" :offset 5 :length 2))
+  (expect (edit-append "/root/spaced" "<n/>")
+          :to-equal (edit-expected "<spaced />" "><n/></spaced>" :offset 8 :length 2)))
+
+(it "appends to an element that has start and end tags but no content"
+  (expect (edit-xml-append "<r><p></p></r>" "/r/p" "<n/>") :to-equal "<r><p><n/></p></r>"))
+
+(it "appends inline at the end of whitespace-only content, keeping the whitespace before it"
+  (expect (edit-append "/root/blank" "<n/>")
+          :to-equal (edit-expected "<blank>   </blank>" "<n/>" :offset 10 :length 0)))
+
+(it "appends without whitespace to children that share a line"
+  (expect (edit-xml-append "<r><a/><b/></r>" "/r" "<n/>") :to-equal "<r><a/><b/><n/></r>"))
+
+(it "appends after character data that is the last node"
+  (expect (edit-append "/root/item" "<n/>")
+          :to-equal (edit-expected "<![CDATA[<raw>]]></item>" "<n/>" :offset 17 :length 0))
+  (expect (edit-append "/root/noted" "<n/>")
+          :to-equal (edit-expected "<noted><!-- c --></noted>" "<n/>" :offset 17 :length 0)))
+
+(it "appends after a markup entity reference without expanding it"
+  (expect (edit-append "/root/holder" "<n/>")
+          :to-equal (edit-expected "&m;</holder>" "<n/>" :offset 3 :length 0)))
+
+(it "copies the indentation in documents of every line break style and with tabs"
+  (dolist (break (list (string #\Linefeed) +spans-crlf+ (string #\Return)))
+    (expect (edit-xml-append (format nil "<r>~A  <a/>~A</r>" break break) "/r" "<n/>")
+            :to-equal (format nil "<r>~A  <a/>~A  <n/>~A</r>" break break break))
+    (expect (edit-xml-append (format nil "<r>~A~C<a/>~A</r>" break #\Tab break) "/r" "<n/>")
+            :to-equal (format nil "<r>~A~C<a/>~A~C<n/>~A</r>" break #\Tab break #\Tab break))))
+
+(it "adds no indentation after character data, which it would change"
+  (expect (edit-xml-append (format nil "<r>~%~C<b/>~%~C<![CDATA[x]]></r>" #\Tab #\Tab)
+                           "/r" "<n/>")
+          :to-equal (format nil "<r>~%~C<b/>~%~C<![CDATA[x]]><n/></r>" #\Tab #\Tab))
+  (expect (edit-xml-append (format nil "<r>~%  <a/>~%  text~%</r>") "/r" "<n/>")
+          :to-equal (format nil "<r>~%  <a/>~%  text~%<n/></r>")))
+
+(it "copies the indentation of the last element child that follows a line break"
+  (expect (edit-xml-append (format nil "<r>~%  <a/><b/>~%</r>") "/r" "<n/>")
+          :to-equal (format nil "<r>~%  <a/><b/>~%  <n/>~%</r>")))
+
+(it "copies only the last line break and indentation of a run of several"
+  (expect (edit-xml-append (format nil "<r>~%~%    <a/>~%</r>") "/r" "<n/>")
+          :to-equal (format nil "<r>~%~%    <a/>~%    <n/>~%</r>")))
+
+(it "converts the line breaks of a fragment to the document's style"
+  (expect (edit-append "/root/bare" (format nil "<l>~%  <e/>~%</l>"))
+          :to-equal (edit-expected "<bare/>"
+                                   (format nil "><l>~C~C  <e/>~C~C</l></bare>"
+                                           #\Return #\Linefeed #\Return #\Linefeed)
+                                   :offset 5 :length 2)))
+
+(it "trims the XML whitespace around the fragment"
+  (expect (edit-append "/root/bare" (format nil " ~C~C<n/>~C " #\Return #\Linefeed #\Tab))
+          :to-equal (edit-expected "<bare/>" "><n/></bare>" :offset 5 :length 2)))
+
+(it "resolves the fragment in the scope of the parent, including its own declarations"
+  (let ((own (edit-append "/root/p:item" "<p:child/>"))
+        (inherited (edit-append "/root/list" "<p:child/>"))
+        (default (edit-append "/root/list" "<plain/>")))
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml own "/root/p:item/p:child")))))
+            :to-equal "urn:other")
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml inherited "/root/list/p:child")))))
+            :to-equal "urn:p")
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml default "/root/list/plain")))))
+            :to-equal "urn:default")))
+
+(it "selects the appended element as the last child"
+  (expect (mapcar #'xml-match-path (select-xml (edit-append "/root/list" "<added/>") "/root/list/*"))
+          :to-equal '("/root[1]/list[1]/entry[1]" "/root[1]/list[1]/added[1]")))
+
+(it "refuses an attribute or text() path as the place to append"
+  (dolist (path '("/root/@a" "/root/bare/text()"))
+    (expect (edit-refusal (lambda () (edit-append path "<n/>")))
+            :to-equal (list 'xml-path-error :wrong-target path))))
+
+(it "refuses to append to a path that matches nothing or more than one element"
+  (expect (edit-refusal (lambda () (edit-append "/root/nothing" "<n/>")))
+          :to-equal '(xml-path-error :no-match "/root/nothing"))
+  (expect (edit-refusal (lambda () (edit-append "/root/*" "<n/>")))
+          :to-equal '(xml-path-error :multiple-matches "/root/*")))
+
+(it "refuses a malformed path with its index"
+  (expect (path-syntax-error-index (lambda () (edit-append "/root/" "<n/>"))) :to-equal 6))
+
+(it "refuses an appended fragment that is not exactly one element"
+  (dolist (fragment '("" "  " "text" "<a/><b/>" "<a/>x" "<!--c--><a/>"))
+    (expect (edit-refusal (lambda () (edit-append "/root/bare" fragment)))
+            :to-equal '(xml-edit-value-error :not-single-element "/root/bare"))))
+
+(it "refuses an appended fragment that does not parse where it is written"
+  (dolist (fragment '("<a>" "<z:a/>" "<a>&xxe;</a>" "<a>&e;</a>" "<!DOCTYPE a><a/>"
+                      "<!DOCTYPE a [<!ENTITY x SYSTEM \"x.ent\">]><a>&x;</a>"
+                      "<?xml version=\"1.0\"?><a/>" "</w><a/>"))
+    (expect (edit-refusal (lambda () (edit-append "/root/bare" fragment)))
+            :to-equal '(xml-edit-value-error :malformed-fragment "/root/bare"))))
+
+(it "refuses an appended fragment that breaks a resource limit of the caller"
+  (let ((limits (make-xml-resource-limits :max-attributes-per-element 3)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-append "<r><a/></r>" "/r/a" "<b x=\"1\" y=\"2\" z=\"3\" w=\"4\"/>"
+                                             :resource-limits limits)))
+            :to-equal '(xml-edit-value-error :resource-limit "/r/a"))))
+
+(it "refuses an appended fragment that fits alone but exceeds the depth limit where it lands"
+  (expect (edit-refusal (lambda ()
+                          (edit-xml-append "<r><x><y/></x></r>" "/r/x/y" "<a><b/></a>"
+                                           :resource-limits (make-xml-resource-limits :max-depth 3))))
+          :to-equal '(xml-edit-value-error :resource-limit "/r/x/y")))
+
+(it "refuses an appended fragment with a character that XML does not allow"
+  (expect (edit-refusal (lambda () (edit-append "/root/bare" (format nil "<a>~C</a>" (code-char 0)))))
+          :to-equal '(xml-edit-value-error :invalid-character "/root/bare")))
+
+(it "refuses a step below an element that references a markup entity"
+  (expect (edit-refusal (lambda () (edit-append "/root/holder/b" "<n/>")))
+          :to-equal '(xml-unsupported-edit :entity-reference "/root/holder/b")))
+
+(it "applies the caller's external entity policy to the source"
+  (let ((source "<!DOCTYPE a SYSTEM \"a.dtd\"><a/>"))
+    (expect (typep (handler-case (edit-xml-append source "/a" "<n/>")
+                     (xml-kit-error (caught) caught))
+                   'xml-external-resource-disabled)
+            :to-be-truthy)
+    (expect (edit-xml-append source "/a" "<n/>" :external-entity-policy :skip)
+            :to-equal "<!DOCTYPE a SYSTEM \"a.dtd\"><a><n/></a>")))
+
+(it "rejects a source, path, or fragment that is not a string with an input error"
+  (dolist (thunk (list (lambda () (edit-xml-append 42 "/a" "<n/>"))
+                       (lambda () (edit-xml-append "<a/>" 42 "<n/>"))
+                       (lambda () (edit-xml-append "<a/>" "/a" 42))))
+    (expect (typep (handler-case (funcall thunk) (xml-kit-error (caught) caught))
+                   'xml-input-error)
+            :to-be-truthy)))
 
 ;;; Generated documents
 
@@ -738,3 +919,15 @@ laid out on one line and on separate lines.")
                         (- (xml-match-end match) (xml-match-start match)))
                     :to-be-truthy)))))
     (expect (> edited 100) :to-be-truthy)))
+
+(it "appends to every generated element and changes only inside it"
+  (let ((edited 0))
+    (dolist (source (edit-stage-c-documents))
+      (dolist (match (edit-element-matches source))
+        (let ((result (edit-xml-append source (xml-match-path match) "<zz a=\"1\"/>")))
+          (incf edited)
+          (expect (edit-outside-p source result (xml-match-start match) (xml-match-end match))
+                  :to-be-truthy)
+          (expect (search "<zz a=\"1\"/>" result :start2 (xml-match-start match))
+                  :to-be-truthy))))
+    (expect (> edited 300) :to-be-truthy)))

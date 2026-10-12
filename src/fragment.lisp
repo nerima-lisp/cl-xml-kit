@@ -65,9 +65,10 @@ an undeclared default namespace is left out."
 
 Return the one element it consists of, and FRAGMENT without the XML whitespace
 around it. A fragment that does not parse in a wrapper that declares the
-namespaces in scope signals XML-EDIT-VALUE-ERROR :MALFORMED-FRAGMENT with the
-parse condition as its cause; one that parses to anything but a single element
-signals :NOT-SINGLE-ELEMENT."
+namespaces in scope signals XML-EDIT-VALUE-ERROR :MALFORMED-FRAGMENT, or
+:RESOURCE-LIMIT for a limit of the caller, with the parse condition as its
+cause; one that parses to anything but a single element signals
+:NOT-SINGLE-ELEMENT."
   (let* ((path (path-context-path context))
          (trimmed (string-trim '(#\Space #\Tab #\Return #\Linefeed) fragment))
          (wrapper (handler-case
@@ -77,7 +78,10 @@ signals :NOT-SINGLE-ELEMENT."
                                  (path-context-external-entity-policy context))
                     (error (condition)
                       (error 'xml-edit-value-error
-                             :path path :reason :malformed-fragment :cause condition
+                             :path path :cause condition
+                             :reason (if (typep condition 'xml-resource-limit-exceeded)
+                                         :resource-limit
+                                         :malformed-fragment)
                              :message (format nil "The fragment is not acceptable: ~A"
                                               condition)))))
          (children (xml-element-children (first (xml-document-children wrapper)))))

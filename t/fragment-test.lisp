@@ -139,4 +139,4 @@
     (expect (fragment-failure
              (lambda ()
                (fragment-element "<a x=\"1\" y=\"2\" z=\"3\"/>" :resource-limits limits)))
-            :to-equal '(:malformed-fragment xml-resource-limit-exceeded))))
+            :to-equal '(:resource-limit xml-resource-limit-exceeded))))

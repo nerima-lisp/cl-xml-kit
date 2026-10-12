@@ -311,6 +311,61 @@ on both sides is plain whitespace, so no character data changes."
                                     (%dom-without-element-child parent (car (last ordinals)))))
                     :lenient-ordinals parent-ordinals))))
 
+(defun %edit-last-line-indentation (source parent)
+  "Return the line break and indentation before the last element child of PARENT that follows whitespace with a line break, or NIL.
+
+For a run of several line breaks, only the last line break and what follows it."
+  (let ((found nil))
+    (loop for (previous child) on (span-element-children parent)
+          do (when (and (span-element-p child) (%edit-plain-whitespace-p source previous))
+               (let ((break (position-if (lambda (character)
+                                           (or (char= character #\Return)
+                                               (char= character #\Linefeed)))
+                                         source
+                                         :start (span-node-start previous)
+                                         :end (span-node-end previous)
+                                         :from-end t)))
+                 (when break
+                   (when (and (char= (char source break) #\Linefeed)
+                              (> break (span-node-start previous))
+                              (char= (char source (1- break)) #\Return))
+                     (decf break))
+                   (setf found (subseq source break (span-node-end previous)))))))
+    found))
+
+(defun %edit-append-element (context parsed fragment)
+  (let* ((hit (%edit-single-hit context parsed))
+         (parent (path-hit-element hit))
+         (source (path-context-source context)))
+    (multiple-value-bind (appended text)
+        (%edit-fragment-element context (path-hit-chain hit) fragment)
+      (let* ((text (%edit-convert-line-breaks
+                    text (span-document-line-break (path-context-spans context))))
+             (last-node (find-if-not (lambda (node) (%edit-plain-whitespace-p source node))
+                                     (span-element-children parent)
+                                     :from-end t))
+             (point (if last-node
+                        (span-node-end last-node)
+                        (span-element-content-end parent)))
+             (empty-p (span-element-empty-p parent)))
+        (%edit-finish context point
+                      (if empty-p (span-element-start-tag-end parent) point)
+                      (cond
+                        (empty-p
+                         (concatenate 'string ">" text "</" (span-element-qname parent) ">"))
+                        ((and last-node (not (span-text-p last-node)))
+                         (concatenate 'string
+                                      (or (%edit-last-line-indentation source parent) "")
+                                      text))
+                        (t text))
+                      (%dom-rebuild (path-context-dom context) (%path-hit-ordinal-path hit)
+                                    (lambda (dom-parent)
+                                      (%dom-element-with
+                                       dom-parent
+                                       :children (append (xml-element-children dom-parent)
+                                                         (list appended)))))
+                      :lenient-ordinals (%path-hit-ordinal-path hit))))))
+
 (defun edit-xml-set (source path value &key (resource-limits *default-xml-resource-limits*)
                                             (external-entity-policy :reject))
   "Return SOURCE with the target of PATH set to VALUE, changing nothing else.
@@ -359,3 +414,29 @@ target and signals XML-PATH-ERROR with reason :WRONG-TARGET."
       (ecase (parsed-path-target parsed)
         (:attribute (%edit-delete-attribute context parsed))
         (:element (%edit-delete-element context parsed))))))
+
+(defun edit-xml-append (source path fragment
+                        &key (resource-limits *default-xml-resource-limits*)
+                             (external-entity-policy :reject))
+  "Return SOURCE with the element FRAGMENT added as the last child of the element at PATH.
+
+PATH must select exactly one element, otherwise XML-PATH-ERROR with reason
+:WRONG-TARGET for an attribute or text() path, :NO-MATCH, or :MULTIPLE-MATCHES.
+FRAGMENT must parse as exactly one element where it is written, with the
+namespaces in scope there; surrounding XML whitespace is dropped. It goes after
+the last child that is not whitespace, preceded by the line break and indentation
+that precede the last indented element child, unless that child is character data,
+which the indentation would change; an empty element gets it between a new start
+tag end and end tag, and content that is only whitespace keeps it before the
+fragment. The result is parsed again and must equal the original document
+with the element added."
+  (let ((parsed (%path-parse path)))
+    (unless (eq (parsed-path-target parsed) :element)
+      (error 'xml-path-error
+             :path path :reason :wrong-target
+             :message "Only an element can have an element appended."))
+    (%edit-check-value path fragment)
+    (%edit-append-element (%path-context source path
+                                         :resource-limits resource-limits
+                                         :external-entity-policy external-entity-policy)
+                          parsed fragment)))

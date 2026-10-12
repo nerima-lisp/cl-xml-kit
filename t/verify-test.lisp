@@ -160,7 +160,7 @@
              (lambda ()
                (cl-xml-kit::%edit-verify context "<root><a><b/></a></root>"
                                          (parse-xml "<root><a><b/></a></root>"))))
-            :to-equal '(xml-unsupported-edit :verification-failed))))
+            :to-equal '(xml-edit-value-error :resource-limit))))
 
 (it "reads a candidate that starts with U+FEFF"
   (let ((candidate (concatenate 'string +spans-bom+ "<root a=\"2\"/>"))
