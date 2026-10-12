@@ -86,23 +86,34 @@
                                               :position position
                                               :end-position end-position)))))))
 
-(defun %parser-parse-doctype (parser token)
-  (let* ((body (xml-token-value token))
-         (length (length body))
-         (index 0))
+(defun %doctype-body-layout (body)
+  "Return the root-name and internal-subset bounds of a DOCTYPE token BODY.
+
+The values are the root-name start and end, then the internal-subset start and
+end, which are NIL when BODY has no internal subset."
+  (let ((length (length body))
+        (index 0))
     (loop while (and (< index length) (%xml-space-p (char body index)))
           do (incf index))
     (let ((start index))
       (loop while (and (< index length)
                        (%entity-name-char-p (char body index)))
             do (incf index))
+      (let ((open (position #\[ body :start index))
+            (close (position #\] body :from-end t)))
+        (if (and open close (< open close))
+            (values start index (1+ open) close)
+            (values start index nil nil))))))
+
+(defun %parser-parse-doctype (parser token)
+  (let ((body (xml-token-value token)))
+    (multiple-value-bind (start index subset-start subset-end)
+        (%doctype-body-layout body)
       (when (= start index)
         (%parser-token-error parser token "DOCTYPE needs a root name."
                              :doctype :name))
       (let ((root-name (subseq body start index))
-            (internal nil)
-            (open (position #\[ body :start index))
-            (close (position #\] body :from-end t)))
+            (internal (and subset-start (subseq body subset-start subset-end))))
         (when (or (search "SYSTEM" body :start2 index :test #'char-equal)
                   (search "PUBLIC" body :start2 index :test #'char-equal))
           (when (eq (xml-parser-external-entity-policy parser) :reject)
@@ -111,8 +122,6 @@
                    :identifier root-name :kind :external-dtd
                    :source (xml-parser-source-name parser)
                    :position (xml-token-position token))))
-        (when (and open close (< open close))
-          (setf internal (subseq body (1+ open) close)))
         (when (xml-parser-doctype-seen parser)
           (%parser-token-error parser token "Only one DOCTYPE is allowed."
                                :doctype :single-doctype))

@@ -23,7 +23,7 @@
             (:constructor %make-xml-entity-context
                 (declarations parameter-declarations limits external-entity-policy
                  source position expansions expanded-characters expansion-stack
-                 skipped-external-entities)))
+                 skipped-external-entities attlist-element-names)))
   "Mutable, parse-local state used while expanding XML entities."
   (declarations (make-hash-table :test #'equal))
   (parameter-declarations (make-hash-table :test #'equal))
@@ -34,7 +34,8 @@
   (expansions 0)
   (expanded-characters 0)
   (expansion-stack nil)
-  (skipped-external-entities nil))
+  (skipped-external-entities nil)
+  (attlist-element-names nil))
 
 (defun make-xml-entity-context (&key
                                   (resource-limits *default-xml-resource-limits*)
@@ -53,7 +54,7 @@
   (%make-xml-entity-context (make-hash-table :test #'equal)
                             (make-hash-table :test #'equal)
                             resource-limits external-entity-policy
-                            (and source (copy-seq source)) position 0 0 nil nil))
+                            (and source (copy-seq source)) position 0 0 nil nil nil))
 
 (defun make-xml-entity-declaration (&key name replacement-text parameter-p
                                          external-p public-id system-id)
@@ -489,6 +490,24 @@ the parser then validates the resulting replacement as XML content."
           finally (%entity-error context "Unterminated markup declaration."
                                  :markup-declaration))))
 
+;; ATTLIST declarations are otherwise skipped; the names are kept for tools that
+;; must not edit attributes governed by a declaration.
+(defun %note-attlist-declaration (text start context)
+  (let ((keyword-end (+ start 9)))
+    (when (and (< keyword-end (length text))
+               (string= "<!ATTLIST" text :start2 start :end2 keyword-end)
+               (%xml-space-p (char text keyword-end)))
+      (let* ((name-start (%skip-xml-space text keyword-end))
+             (name-end name-start))
+        (when (and (< name-start (length text))
+                   (%entity-name-start-p (char text name-start)))
+          (loop while (and (< name-end (length text))
+                           (%entity-name-char-p (char text name-end)))
+                do (incf name-end))
+          (pushnew (subseq text name-start name-end)
+                   (xml-entity-context-attlist-element-names context)
+                   :test #'string=))))))
+
 (defun parse-xml-internal-subset (subset &key
                                          (resource-limits *default-xml-resource-limits*)
                                          (external-entity-policy :reject)
@@ -553,6 +572,7 @@ the parser then validates the resulting replacement as XML content."
                             ((and (< (+ index 1) length)
                                   (char= (char text index) #\<)
                                   (char= (char text (1+ index)) #\!))
+                             (%note-attlist-declaration text index context)
                              (setf index (%skip-markup-declaration text index context)))
                             (t
                              (incf index)))))))

@@ -572,6 +572,7 @@ entities
 parser-state
 parser
 serializer
+spans
 ```
 
 The test system uses this order:
@@ -592,6 +593,7 @@ parser-test
 dom-test
 serializer-test
 round-trip-test
+spans-test
 property-test
 fuzz-test
 xml-conformance-test
@@ -616,6 +618,7 @@ Every source and test file appears exactly once in this table.
 | W3 | `src/namespace.lisp`, `src/entities.lisp`, `src/parser-state.lisp`, `src/parser.lisp` | `t/namespace-test.lisp`, `t/entities-test.lisp`, `t/parser-test.lisp`, `t/dom-test.lisp`, `t/security-test.lisp` | W1 nodes/events/conditions/limits and W2 tokenizer/input. Publishes valid event order and DOM invariants to W4. |
 | W4 | `src/serializer.lisp` | `t/serializer-test.lisp`, `t/round-trip-test.lisp` | W1 node/name/limit contracts and W3 expanded-name, declaration, and text-coalescing invariants. |
 | W5 | None | `t/property-test.lisp`, `t/fuzz-test.lisp`, `t/xml-conformance-test.lisp` | All stable public contracts. Owns benchmark artifacts, release-verification scripts, the XMLConf runner, exclusion manifest, and the XMLConf fetch block in `flake.nix`. |
+| W6 | `src/spans.lisp` | `t/spans-test.lisp` | W2 token end offsets and W3 entity and DOCTYPE helpers. Publishes the lexical span tree to tools that edit source text. |
 
 ### Shared build and project-file ownership
 

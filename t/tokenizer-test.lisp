@@ -204,3 +204,22 @@
            (cl-xml-kit:make-xml-resource-limits :max-text-node-length 3))
           :to-equal :max-text-node-length))
 
+
+(it "reports the exclusive end offset of every token"
+  (let* ((input "text&amp;<![CDATA[c]]><!--k--><?pi d?><root  a = \"v\" >t</root>")
+         (tokenizer (cl-xml-kit::make-xml-tokenizer input))
+         (lexemes (loop for token = (cl-xml-kit::next-xml-token tokenizer)
+                        while token
+                        collect (subseq input
+                                        (cl-xml-kit:xml-position-offset
+                                         (cl-xml-kit::xml-token-position token))
+                                        (cl-xml-kit::xml-token-end token)))))
+    (expect lexemes
+            :to-equal '("text" "&amp;" "<![CDATA[c]]>" "<!--k-->" "<?pi d?>"
+                        "<" "root" "a" "=" "\"v\"" ">" "t" "</" "root" ">" ""))))
+
+(it "rejects a token end that is not a non-negative integer"
+  (expect (handler-case
+              (progn (cl-xml-kit::make-xml-token :kind :eof :end -1) nil)
+            (cl-xml-kit:xml-input-error () t))
+          :to-be-truthy))

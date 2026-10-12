@@ -21,20 +21,25 @@ character of the lexical construct. EOF is returned once at the final
 position; subsequent calls return NIL.")
 
 (defstruct (xml-token
-            (:constructor %make-xml-token (kind value position))
+            (:constructor %make-xml-token (kind value position end))
             (:conc-name %xml-token-)
             (:copier nil)
             (:predicate xml-token-p))
-  "An immutable lexical token with its source position."
+  "An immutable lexical token with its source position.
+
+END is the exclusive normalized offset after the lexeme, or NIL when the token
+was built without one."
   (kind nil :read-only t)
   (value nil :read-only t)
-  (position nil :read-only t))
+  (position nil :read-only t)
+  (end nil :read-only t))
 
-(defun make-xml-token (&key kind value position)
+(defun make-xml-token (&key kind value position end)
   "Return an XML token using the kind-specific value representation.
 
 The string-valued kinds contain delimiter-free lexical text as documented by
-`+XML-TOKEN-KINDS+`; punctuation kinds and EOF require NIL."
+`+XML-TOKEN-KINDS+`; punctuation kinds and EOF require NIL. END, when
+supplied, is the exclusive normalized offset after the lexeme."
   (unless (member kind +xml-token-kinds+)
     (error 'xml-input-error
            :message (format nil "Unknown XML token kind ~S." kind)))
@@ -51,7 +56,10 @@ The string-valued kinds contain delimiter-free lexical text as documented by
   (when (and position (not (xml-position-p position)))
     (error 'xml-input-error
            :message "TOKEN POSITION must be an XML-POSITION."))
-  (%make-xml-token kind (and value (copy-seq value)) position))
+  (unless (typep end '(or null (integer 0)))
+    (error 'xml-input-error
+           :message "TOKEN END must be a non-negative integer or NIL."))
+  (%make-xml-token kind (and value (copy-seq value)) position end))
 
 (defun xml-token-kind (token)
   "Return a token's lexical kind."
@@ -64,6 +72,10 @@ The string-valued kinds contain delimiter-free lexical text as documented by
 (defun xml-token-position (token)
   "Return a token's source position, or NIL."
   (%xml-token-position token))
+
+(defun xml-token-end (token)
+  "Return a token's exclusive normalized end offset, or NIL."
+  (%xml-token-end token))
 
 (defstruct (%xml-tokenizer-state
             (:constructor %make-xml-tokenizer-state (index line column mode eof-returned))
@@ -209,8 +221,9 @@ cursor, so repeated calls consume the input in order."
           do (%xml-tokenizer-advance tokenizer))))
 
 (defun %xml-tokenizer-token (tokenizer kind value position)
-  (declare (ignore tokenizer))
-  (make-xml-token :kind kind :value value :position position))
+  (make-xml-token :kind kind :value value :position position
+                  :end (%xml-tokenizer-state-index
+                        (%xml-tokenizer-state tokenizer))))
 
 (defun %xml-tokenizer-check-name-limit (tokenizer length)
   (let ((limit (xml-resource-limits-max-name-length
