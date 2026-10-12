@@ -156,34 +156,38 @@ document element itself), and nowhere else."
                                           lenient-ordinals))
                 expected actual))))
 
+(defun %edit-reparse (context candidate)
+  "Return the document that CANDIDATE parses to, with the options of CONTEXT.
+
+A resource limit that it exceeds signals XML-EDIT-VALUE-ERROR with reason
+:RESOURCE-LIMIT and the condition as its cause, since the original document was
+within the limits. Any other parse condition signals XML-UNSUPPORTED-EDIT with
+reason :VERIFICATION-FAILED."
+  (handler-case
+      (parse-xml (%strip-bom candidate)
+                 :resource-limits (path-context-resource-limits context)
+                 :external-entity-policy (path-context-external-entity-policy context))
+    (xml-resource-limit-exceeded (condition)
+      (error 'xml-edit-value-error
+             :path (path-context-path context) :reason :resource-limit
+             :cause condition
+             :message (format nil "The edited document exceeds a resource limit: ~A"
+                              condition)))
+    (error (condition)
+      (%path-refuse context :verification-failed
+                    (format nil "The edited document does not parse: ~A" condition)))))
+
 (defun %edit-verify (context candidate expected &key (lenient-ordinals :none))
   "Return CANDIDATE when it parses to EXPECTED, else refuse the edit.
 
-CANDIDATE is parsed with the options of CONTEXT. A resource limit that it exceeds
-signals XML-EDIT-VALUE-ERROR with reason :RESOURCE-LIMIT and the condition as its
-cause, since the original document was within the limits. Any other condition
-from that parse, or any difference from the EXPECTED document, signals
-XML-UNSUPPORTED-EDIT with reason :VERIFICATION-FAILED, so no unchecked string is
-returned."
-  (let ((actual (handler-case
-                    (parse-xml (%strip-bom candidate)
-                               :resource-limits (path-context-resource-limits context)
-                               :external-entity-policy
-                               (path-context-external-entity-policy context))
-                  (xml-resource-limit-exceeded (condition)
-                    (error 'xml-edit-value-error
-                           :path (path-context-path context) :reason :resource-limit
-                           :cause condition
-                           :message (format nil "The edited document exceeds a resource limit: ~A"
-                                            condition)))
-                  (error (condition)
-                    (%path-refuse context :verification-failed
-                                  (format nil "The edited document does not parse: ~A"
-                                          condition))))))
-    (unless (%dom-document-equivalent-p expected actual lenient-ordinals)
-      (%path-refuse context :verification-failed
-                    "The edited document differs from the requested change."))
-    candidate))
+A candidate that does not parse is refused as %EDIT-REPARSE describes, and a
+difference from the EXPECTED document signals XML-UNSUPPORTED-EDIT with reason
+:VERIFICATION-FAILED, so no unchecked string is returned."
+  (unless (%dom-document-equivalent-p expected (%edit-reparse context candidate)
+                                      lenient-ordinals)
+    (%path-refuse context :verification-failed
+                  "The edited document differs from the requested change."))
+  candidate)
 
 (defun %edit-finish (context start end replacement expected &key (lenient-ordinals :none))
   "Replace the range from START to END of the source by REPLACEMENT and verify the result."

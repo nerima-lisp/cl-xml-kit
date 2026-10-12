@@ -37,7 +37,8 @@
                (:file "path")
                (:file "verify")
                (:file "fragment")
-               (:file "edit"))
+               (:file "edit")
+               (:file "format"))
   :in-order-to ((test-op (test-op "cl-xml-kit/test"))))
 
 (asdf:defsystem "cl-xml-kit/test"
@@ -72,6 +73,7 @@
                (:file "verify-test")
                (:file "fragment-test")
                (:file "edit-test")
+               (:file "format-test")
                (:file "property-test")
                (:file "fuzz-test")
                (:file "xml-conformance-test"))

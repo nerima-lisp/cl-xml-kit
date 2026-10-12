@@ -78,5 +78,5 @@
    #:select-xml #:xml-match #:xml-match-p #:xml-match-kind #:xml-match-path
    #:xml-match-name #:xml-match-value #:xml-match-start #:xml-match-end
    #:xml-match-element #:edit-xml-set #:edit-xml-delete
-   #:edit-xml-append))
+   #:edit-xml-append #:format-xml))
 

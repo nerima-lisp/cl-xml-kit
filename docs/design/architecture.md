@@ -577,6 +577,7 @@ path
 verify
 fragment
 edit
+format
 ```
 
 The test system uses this order:
@@ -602,6 +603,7 @@ path-test
 verify-test
 fragment-test
 edit-test
+format-test
 property-test
 fuzz-test
 xml-conformance-test
@@ -626,7 +628,7 @@ Every source and test file appears exactly once in this table.
 | W3 | `src/namespace.lisp`, `src/entities.lisp`, `src/parser-state.lisp`, `src/parser.lisp` | `t/namespace-test.lisp`, `t/entities-test.lisp`, `t/parser-test.lisp`, `t/dom-test.lisp`, `t/security-test.lisp` | W1 nodes/events/conditions/limits and W2 tokenizer/input. Publishes valid event order and DOM invariants to W4. |
 | W4 | `src/serializer.lisp` | `t/serializer-test.lisp`, `t/round-trip-test.lisp` | W1 node/name/limit contracts and W3 expanded-name, declaration, and text-coalescing invariants. |
 | W5 | None | `t/property-test.lisp`, `t/fuzz-test.lisp`, `t/xml-conformance-test.lisp` | All stable public contracts. Owns benchmark artifacts, release-verification scripts, the XMLConf runner, exclusion manifest, and the XMLConf fetch block in `flake.nix`. |
-| W6 | `src/spans.lisp`, `src/path.lisp`, `src/verify.lisp`, `src/fragment.lisp`, `src/edit.lisp` | `t/spans-test.lisp`, `t/path-test.lisp`, `t/verify-test.lisp`, `t/fragment-test.lisp`, `t/edit-test.lisp` | W2 token end offsets, W3 entity and DOCTYPE helpers and DOM nodes, and W1 conditions. Publishes the lexical span tree, `select-xml`, and the source-preserving edit operations. |
+| W6 | `src/spans.lisp`, `src/path.lisp`, `src/verify.lisp`, `src/fragment.lisp`, `src/edit.lisp`, `src/format.lisp` | `t/spans-test.lisp`, `t/path-test.lisp`, `t/verify-test.lisp`, `t/fragment-test.lisp`, `t/edit-test.lisp`, `t/format-test.lisp` | W2 token end offsets, W3 entity and DOCTYPE helpers and DOM nodes, and W1 conditions. Publishes the lexical span tree, `select-xml`, the source-preserving edit operations, and `format-xml`. |
 
 ### Shared build and project-file ownership
 
