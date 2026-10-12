@@ -70,5 +70,12 @@
    #:xml-resource-limit-exceeded-kind #:xml-resource-limit-exceeded-value
    #:xml-resource-limit-exceeded-limit #:xml-invalid-resource-limit-kind
    #:xml-invalid-resource-limit-value #:xml-serialization-error-object
-   #:xml-serialization-error-path))
+   #:xml-serialization-error-path
+   #:xml-edit-error #:xml-path-error #:xml-unsupported-edit
+   #:xml-edit-value-error #:xml-edit-error-path #:xml-edit-error-reason
+   #:xml-path-error-index #:xml-edit-value-error-cause
+   ;; Source-preserving reading and editing
+   #:select-xml #:xml-match #:xml-match-p #:xml-match-kind #:xml-match-path
+   #:xml-match-name #:xml-match-value #:xml-match-start #:xml-match-end
+   #:xml-match-element #:edit-xml-set #:edit-xml-delete))
 

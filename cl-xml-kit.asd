@@ -33,7 +33,10 @@
                (:file "parser-state")
                (:file "parser")
                (:file "serializer")
-               (:file "spans"))
+               (:file "spans")
+               (:file "path")
+               (:file "verify")
+               (:file "edit"))
   :in-order-to ((test-op (test-op "cl-xml-kit/test"))))
 
 (asdf:defsystem "cl-xml-kit/test"
@@ -64,6 +67,9 @@
                (:file "serializer-test")
                (:file "round-trip-test")
                (:file "spans-test")
+               (:file "path-test")
+               (:file "verify-test")
+               (:file "edit-test")
                (:file "property-test")
                (:file "fuzz-test")
                (:file "xml-conformance-test"))

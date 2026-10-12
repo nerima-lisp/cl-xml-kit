@@ -64,3 +64,33 @@
               (princ condition stream))
             :to-equal "bad XML")))
 
+(it "keeps the documented edit condition inheritance"
+  (expect (subtypep 'xml-edit-error 'xml-kit-error) :to-be-truthy)
+  (dolist (type '(xml-path-error xml-unsupported-edit xml-edit-value-error))
+    (expect (subtypep type 'xml-edit-error) :to-be-truthy)))
+
+(it "retains the edit condition payloads"
+  (let ((path-error (make-condition 'xml-path-error :message "bad path" :path "/a/"
+                                                    :reason :syntax :index 3))
+        (unsupported (make-condition 'xml-unsupported-edit :message "refused"
+                                                           :path "/a/@xmlns"
+                                                           :reason :namespace-declaration))
+        (value-error (make-condition 'xml-edit-value-error :message "bad value"
+                                                           :path "/a" :reason :malformed-fragment
+                                                           :cause :cause)))
+    (expect (list (xml-edit-error-path path-error) (xml-edit-error-reason path-error)
+                  (xml-path-error-index path-error) (xml-condition-message path-error)
+                  (xml-edit-error-path unsupported) (xml-edit-error-reason unsupported)
+                  (xml-edit-error-path value-error) (xml-edit-error-reason value-error)
+                  (xml-edit-value-error-cause value-error))
+            :to-equal '("/a/" :syntax 3 "bad path" "/a/@xmlns" :namespace-declaration
+                        "/a" :malformed-fragment :cause))))
+
+(it "defaults the optional edit condition payloads to nil"
+  (let ((path-error (make-condition 'xml-path-error :message "no match" :path "/a"
+                                                    :reason :no-match))
+        (value-error (make-condition 'xml-edit-value-error :message "bad"
+                                                           :reason :not-single-element)))
+    (expect (list (xml-path-error-index path-error) (xml-edit-value-error-cause value-error)
+                  (xml-edit-error-path value-error))
+            :to-equal '(nil nil nil))))

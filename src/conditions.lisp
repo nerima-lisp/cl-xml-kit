@@ -89,3 +89,23 @@
          :documentation "The path to the offending object, when available."))
   (:documentation "A tree or output stream could not be serialized."))
 
+
+(define-condition xml-edit-error (xml-kit-error)
+  ((path :initarg :path :initform nil :reader xml-edit-error-path
+         :documentation "The path the caller supplied.")
+   (reason :initarg :reason :initform nil :reader xml-edit-error-reason
+           :documentation "A keyword naming why the path or edit was refused."))
+  (:documentation "Base condition for path resolution and source-preserving edits."))
+
+(define-condition xml-path-error (xml-edit-error)
+  ((index :initarg :index :initform nil :reader xml-path-error-index
+          :documentation "The zero-based index into the path of a :SYNTAX error, else NIL."))
+  (:documentation "A path is malformed, matches nothing, or names the wrong kind of target."))
+
+(define-condition xml-unsupported-edit (xml-edit-error) ()
+  (:documentation "An edit cannot be applied without risking the document."))
+
+(define-condition xml-edit-value-error (xml-edit-error)
+  ((cause :initarg :cause :initform nil :reader xml-edit-value-error-cause
+          :documentation "The condition that made a fragment unacceptable, when there is one."))
+  (:documentation "A value or fragment supplied to an edit is not acceptable."))
