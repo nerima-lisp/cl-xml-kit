@@ -13,6 +13,30 @@
                               :start-element :end-element :end-element
                               :end-document))))
 
+(it "queues parser events in order and keeps the queue tail on the last event"
+  (let ((parser (make-xml-parser "<a/>")))
+    (dotimes (index 3)
+      (cl-xml-kit::%parser-queue-event
+       parser (make-xml-event :type :comment :text (princ-to-string index))))
+    (expect (mapcar #'xml-event-text (cl-xml-kit::xml-parser-queue parser))
+            :to-equal '("0" "1" "2"))
+    (expect (eq (cl-xml-kit::xml-parser-queue-tail parser)
+                (last (cl-xml-kit::xml-parser-queue parser)))
+            :to-be-truthy)))
+
+(it "restarts the event queue after every queued event has been taken"
+  (let ((parser (make-xml-parser "<a/>")))
+    (cl-xml-kit::%parser-queue-event
+     parser (make-xml-event :type :comment :text "first"))
+    (pop (cl-xml-kit::xml-parser-queue parser))
+    (cl-xml-kit::%parser-queue-event
+     parser (make-xml-event :type :comment :text "second"))
+    (expect (mapcar #'xml-event-text (cl-xml-kit::xml-parser-queue parser))
+            :to-equal '("second"))
+    (expect (eq (cl-xml-kit::xml-parser-queue-tail parser)
+                (last (cl-xml-kit::xml-parser-queue parser)))
+            :to-be-truthy)))
+
 (it "normalizes attributes, expands entities, and coalesces text"
   (let* ((document (parse-xml "<!DOCTYPE root [<!ENTITY hi \"there\">]><root a=\"x&amp;y\">one&hi;two</root>"))
          (root (second (xml-document-children document))))

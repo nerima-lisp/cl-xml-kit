@@ -30,8 +30,11 @@
                                   (and token (xml-token-position token))))
 
 (defun %parser-queue-event (parser event)
-  (setf (xml-parser-queue parser)
-        (nconc (xml-parser-queue parser) (list event))))
+  (let ((cell (list event)))
+    (if (xml-parser-queue parser)
+        (setf (cdr (xml-parser-queue-tail parser)) cell)
+        (setf (xml-parser-queue parser) cell))
+    (setf (xml-parser-queue-tail parser) cell)))
 
 (defun %parser-raw-text (parser text &key attribute-p)
   (expand-xml-entity-references text (xml-parser-entities parser)
@@ -581,7 +584,7 @@ end, which are NIL when BODY has no internal subset."
      text source resource-limits external-entity-policy
      nil
      0 1 1 (make-xml-position :source source :offset 0 :line 1 :column 1)
-     :start nil nil nil nil nil nil nil nil nil 0 nil 0 0 0 nil)))
+     :start nil nil nil nil nil nil nil nil nil 0 nil 0 0 0 nil nil)))
 
 (defun next-xml-event (parser)
   "Return the next pull event, or NIL after END-DOCUMENT."

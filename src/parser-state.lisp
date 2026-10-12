@@ -24,7 +24,7 @@
                  position line column start-position phase stack document-children
                  queue eof fatal root-seen root-closed doctype-root doctype-seen
                  element-count entities entity-expansions expanded-characters
-                 entity-depth tokenizer-stack))
+                 entity-depth tokenizer-stack queue-tail))
             (:copier nil))
   "Mutable forward-only parser state owned by the pull reader."
   (input "" :read-only t)
@@ -41,6 +41,7 @@
   (stack nil)
   (document-children nil)
   (queue nil)
+  (queue-tail nil)
   (eof nil)
   (fatal nil)
   (root-seen nil)
