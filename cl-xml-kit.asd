@@ -36,6 +36,7 @@
                (:file "spans")
                (:file "path")
                (:file "verify")
+               (:file "fragment")
                (:file "edit"))
   :in-order-to ((test-op (test-op "cl-xml-kit/test"))))
 
@@ -69,6 +70,7 @@
                (:file "spans-test")
                (:file "path-test")
                (:file "verify-test")
+               (:file "fragment-test")
                (:file "edit-test")
                (:file "property-test")
                (:file "fuzz-test")

@@ -175,13 +175,154 @@ An unbound prefix in QNAME signals XML-PATH-ERROR with reason :UNDECLARED-PREFIX
                                     (%path-lexical-name (xml-attribute-name candidate)))
                              :test #'string=))))))
 
+(defun %edit-escape-text (value line-break)
+  "Return VALUE as character data, with line feeds written as LINE-BREAK."
+  (with-output-to-string (stream)
+    (loop for character across value
+          do (case character
+               (#\& (write-string "&amp;" stream))
+               (#\< (write-string "&lt;" stream))
+               (#\> (write-string "&gt;" stream))
+               (#\Return (write-string "&#13;" stream))
+               (#\Linefeed (write-string (%edit-convert-line-breaks (string #\Linefeed)
+                                                                    line-break)
+                                         stream))
+               (t (write-char character stream))))))
+
+(defun %edit-text-content (element)
+  "Return the one text run that makes up all the content of the span ELEMENT, or NIL."
+  (let ((children (span-element-children element)))
+    (and children (null (rest children)) (span-text-p (first children))
+         (first children))))
+
+(defun %edit-check-text-settable (context hit)
+  "Refuse to replace content that holds elements, comments, processing instructions, or a markup entity."
+  (let* ((element (path-hit-element hit))
+         (entity (%path-markup-entity-reference context element)))
+    (cond
+      (entity
+       (%path-refuse context :mixed-content
+                     (format nil "The content of <~A> references entity ~A, whose replacement text contains markup."
+                             (span-element-qname element) entity)))
+      ((notevery #'span-text-p (span-element-children element))
+       (%path-refuse context :mixed-content
+                     (format nil "The content of <~A> holds elements, comments, or processing instructions."
+                             (span-element-qname element)))))))
+
+(defun %edit-set-text (context parsed value)
+  (let ((hit (%edit-single-hit context parsed)))
+    (%edit-check-text-settable context hit)
+    (let* ((element (path-hit-element hit))
+           (line-break (span-document-line-break (path-context-spans context)))
+           (content (%edit-text-content element))
+           (text (if (and content (span-text-single-cdata-p content)
+                          (not (search "]]>" value)) (not (find #\Return value)))
+                     (concatenate 'string "<![CDATA["
+                                  (%edit-convert-line-breaks value line-break) "]]>")
+                     (%edit-escape-text value line-break)))
+           (empty-p (span-element-empty-p element)))
+      (%edit-finish context
+                    (span-element-content-start element)
+                    (if empty-p
+                        (span-element-start-tag-end element)
+                        (span-element-content-end element))
+                    (if empty-p
+                        (concatenate 'string ">" text "</" (span-element-qname element) ">")
+                        text)
+                    (%dom-rebuild (path-context-dom context) (%path-hit-ordinal-path hit)
+                                  (lambda (dom-element)
+                                    (%dom-element-with
+                                     dom-element
+                                     :children (and (plusp (length value))
+                                                    (list (make-xml-text :data value))))))))))
+
+(defun %edit-replace-element (context parsed fragment)
+  (let* ((hit (%edit-single-hit context parsed))
+         (element (path-hit-element hit)))
+    (multiple-value-bind (replacement text)
+        (%edit-fragment-element context (rest (path-hit-chain hit)) fragment)
+      (%edit-finish context (span-node-start element) (span-node-end element)
+                    (%edit-convert-line-breaks
+                     text (span-document-line-break (path-context-spans context)))
+                    (%dom-rebuild (path-context-dom context) (%path-hit-ordinal-path hit)
+                                  (lambda (dom-element)
+                                    (declare (ignore dom-element))
+                                    replacement))))))
+
+(defun %edit-removal-start (source start)
+  "Return where removing the element at START from SOURCE begins.
+
+That is START, unless only spaces and tabs lie between the previous line break
+and START; then it is the start of that line break, so no blank line remains."
+  (let ((index start))
+    (loop while (and (> index 0) (member (char source (1- index)) '(#\Space #\Tab)))
+          do (decf index))
+    (cond
+      ((and (> index 1)
+            (char= (char source (1- index)) #\Linefeed)
+            (char= (char source (- index 2)) #\Return))
+       (- index 2))
+      ((and (> index 0) (member (char source (1- index)) '(#\Linefeed #\Return)))
+       (1- index))
+      (t start))))
+
+(defun %edit-plain-whitespace-p (source node)
+  "Return true when NODE is a text run of nothing but literal whitespace."
+  (and (span-text-p node)
+       (not (span-text-cdata-p node))
+       (not (span-text-char-ref-p node))
+       (not (span-text-predefined-ref-p node))
+       (null (span-text-entity-names node))
+       (loop for index from (span-node-start node) below (span-node-end node)
+             always (xml-space-char-p (char source index)))))
+
+(defun %edit-deletion-start (context hit)
+  "Return where deleting the element of HIT begins.
+
+The whitespace and line break before the element go with it only when the text
+on both sides is plain whitespace, so no character data changes."
+  (let* ((source (path-context-source context))
+         (element (path-hit-element hit))
+         (start (span-node-start element))
+         (siblings (span-element-children (path-hit-parent hit)))
+         (position (position element siblings))
+         (previous (and (plusp position) (nth (1- position) siblings)))
+         (next (nth (1+ position) siblings)))
+    (if (and previous
+             (%edit-plain-whitespace-p source previous)
+             (or (null next) (not (span-text-p next))
+                 (%edit-plain-whitespace-p source next)))
+        (%edit-removal-start source start)
+        start)))
+
+(defun %edit-delete-element (context parsed)
+  (let ((hit (%edit-single-hit context parsed)))
+    (when (null (path-hit-ordinals hit))
+      (%path-refuse context :root-element "The document element cannot be deleted."))
+    (let* ((element (path-hit-element hit))
+           (ordinals (%path-hit-ordinal-path hit))
+           (parent-ordinals (butlast ordinals)))
+      (%edit-finish context
+                    (%edit-deletion-start context hit)
+                    (span-node-end element)
+                    ""
+                    (%dom-rebuild (path-context-dom context) parent-ordinals
+                                  (lambda (parent)
+                                    (%dom-without-element-child parent (car (last ordinals)))))
+                    :lenient-ordinals parent-ordinals))))
+
 (defun edit-xml-set (source path value &key (resource-limits *default-xml-resource-limits*)
                                             (external-entity-policy :reject))
   "Return SOURCE with the target of PATH set to VALUE, changing nothing else.
 
-PATH must select exactly one target. For `.../@name`, an existing attribute keeps
-its quote character and only its value text changes; a missing attribute is
-inserted after the last one. Values are escaped for the quote character in use.
+PATH must select exactly one target.
+`.../@name`: an existing attribute keeps its quote character and only its value
+text changes; a missing attribute is inserted after the last one.
+`.../text()`: the whole content of the element is replaced by VALUE as character
+data, or as a CDATA section when the content was exactly one; content that holds
+elements, comments, or processing instructions is refused.
+An element path: VALUE is a fragment of exactly one element that replaces the
+element; it must parse where it is written, with the namespaces in scope there.
 The result is parsed again and must equal the original document with the change
 applied, otherwise XML-UNSUPPORTED-EDIT with reason :VERIFICATION-FAILED."
   (let ((parsed (%path-parse path)))
@@ -192,25 +333,29 @@ applied, otherwise XML-UNSUPPORTED-EDIT with reason :VERIFICATION-FAILED."
                                   :resource-limits resource-limits
                                   :external-entity-policy external-entity-policy)))
       (ecase (parsed-path-target parsed)
-        (:attribute (%edit-set-attribute context parsed value))))))
+        (:attribute (%edit-set-attribute context parsed value))
+        (:text (%edit-set-text context parsed value))
+        (:element (%edit-replace-element context parsed value))))))
 
 (defun edit-xml-delete (source path &key (resource-limits *default-xml-resource-limits*)
                                          (external-entity-policy :reject))
   "Return SOURCE without the target of PATH, changing nothing else.
 
 PATH must select exactly one target. For `.../@name` the attribute and the
-whitespace before it are removed. A `text()` path is not a deletable target and
-signals XML-PATH-ERROR with reason :WRONG-TARGET."
+whitespace before it are removed. For an element path the element is removed,
+with the whitespace and line break before it when nothing else is on its line;
+the document element cannot be removed. A `text()` path is not a deletable
+target and signals XML-PATH-ERROR with reason :WRONG-TARGET."
   (let ((parsed (%path-parse path)))
-    (ecase (parsed-path-target parsed)
-      (:text
-       (error 'xml-path-error
-              :path path :reason :wrong-target
-              :message "A text() path cannot be deleted."))
-      (:attribute
-       (%edit-refuse-namespace-declaration path parsed)
-       (%edit-delete-attribute
-        (%path-context source path
-                       :resource-limits resource-limits
-                       :external-entity-policy external-entity-policy)
-        parsed)))))
+    (when (eq (parsed-path-target parsed) :text)
+      (error 'xml-path-error
+             :path path :reason :wrong-target
+             :message "A text() path cannot be deleted."))
+    (when (eq (parsed-path-target parsed) :attribute)
+      (%edit-refuse-namespace-declaration path parsed))
+    (let ((context (%path-context source path
+                                  :resource-limits resource-limits
+                                  :external-entity-policy external-entity-policy)))
+      (ecase (parsed-path-target parsed)
+        (:attribute (%edit-delete-attribute context parsed))
+        (:element (%edit-delete-element context parsed))))))

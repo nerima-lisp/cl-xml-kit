@@ -41,15 +41,17 @@ itself. The options are those the caller passed."
   (external-entity-policy :reject :read-only t))
 
 (defstruct (path-hit
-            (:constructor %make-path-hit (element chain ordinals steps))
+            (:constructor %make-path-hit (element parent chain ordinals steps))
             (:copier nil))
   "An element reached by a path.
 
-ELEMENT is the span element. CHAIN lists the DOM elements from the matching
-one outward to the document element. ORDINALS lists the 1-based positions
-among all element children that lead from the document element to it, and
-STEPS the canonical step strings, both innermost first."
+ELEMENT is the span element and PARENT the span element that contains it, NIL for
+the document element. CHAIN lists the DOM elements from the matching one outward
+to the document element. ORDINALS lists the 1-based positions among all element
+children that lead from the document element to it, and STEPS the canonical step
+strings, both innermost first."
   (element nil :read-only t)
+  (parent nil :read-only t)
   (chain nil :read-only t)
   (ordinals nil :read-only t)
   (steps nil :read-only t))
@@ -175,19 +177,25 @@ would otherwise reject; the span tree indexes SOURCE as given."
   (or (eq (path-step-name step) :any)
       (string= (path-step-name step) qname)))
 
-(defun %path-check-children-enumerable (context hit)
-  "Refuse to enumerate the children of a HIT whose content references a markup entity."
+(defun %path-markup-entity-reference (context element)
+  "Return the name of an entity with markup that the content of the span ELEMENT references, or NIL."
   (let ((markup (span-document-markup-entity-names (path-context-spans context))))
     (when markup
-      (dolist (child (span-element-children (path-hit-element hit)))
+      (dolist (child (span-element-children element))
         (when (span-text-p child)
           (let ((name (find-if (lambda (name) (member name markup :test #'string=))
                                (span-text-entity-names child))))
             (when name
-              (%path-refuse
-               context :entity-reference
-               (format nil "The children of <~A> cannot be located in the source: its content references entity ~A, whose replacement text contains markup."
-                       (span-element-qname (path-hit-element hit)) name)))))))))
+              (return name))))))))
+
+(defun %path-check-children-enumerable (context hit)
+  "Refuse to enumerate the children of a HIT whose content references a markup entity."
+  (let ((name (%path-markup-entity-reference context (path-hit-element hit))))
+    (when name
+      (%path-refuse
+       context :entity-reference
+       (format nil "The children of <~A> cannot be located in the source: its content references entity ~A, whose replacement text contains markup."
+               (span-element-qname (path-hit-element hit)) name)))))
 
 (defun %path-step-hits (context hit step)
   "Return the children of HIT that STEP selects, in document order."
@@ -209,7 +217,7 @@ would otherwise reject; the span tree indexes SOURCE as given."
                  (when (or (null (path-step-index step))
                            (= matched (path-step-index step)))
                    (push (%make-path-hit
-                          element
+                          element (path-hit-element hit)
                           (cons (aref dom-children (1- ordinal)) (path-hit-chain hit))
                           (cons ordinal (path-hit-ordinals hit))
                           (cons (format nil "~A[~D]" qname same-name)
@@ -224,7 +232,7 @@ would otherwise reject; the span tree indexes SOURCE as given."
          (hits (when (and (%path-name-matches-p step (span-element-qname root))
                           (member (path-step-index step) '(nil 1)))
                  (list (%make-path-hit
-                        root
+                        root nil
                         (list (find-if #'xml-element-p
                                        (xml-document-children (path-context-dom context))))
                         nil

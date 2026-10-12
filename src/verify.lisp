@@ -37,6 +37,15 @@ ORDINALS lists 1-based positions among element children; ELEMENT itself when emp
                                  child))
                            (xml-element-children element))))))
 
+(defun %dom-without-element-child (element ordinal)
+  "Return ELEMENT without its ORDINAL-th element child, counted from 1."
+  (let ((count 0))
+    (%dom-element-with
+     element
+     :children (loop for child in (xml-element-children element)
+                     unless (and (xml-element-p child) (= (incf count) ordinal))
+                       collect child))))
+
 (defun %dom-rebuild (document ordinals function)
   "Return DOCUMENT with the element at ORDINALS, counted from the document element, updated by FUNCTION."
   (make-xml-document

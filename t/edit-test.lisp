@@ -25,6 +25,11 @@
     "  <dup p:flag=\"1\"/>"
     "  <governed id=\"g\"/>"
     "  <holder x=\"1\">&m;</holder>"
+    "  <cdata><![CDATA[a < b]]></cdata>"
+    "  <refs>&#65;&amp;&e;</refs>"
+    "  <blank>   </blank>"
+    "  <nested><inner>x</inner></nested>"
+    "  <noted><!-- c --></noted>"
     "  <!-- inner comment -->"
     "  <?inner pi?>"
     "</root>"
@@ -48,6 +53,13 @@ laid out on one line and on separate lines.")
 (defun edit-expected (needle replacement &key (offset 0) length)
   "Return +EDIT-SOURCE+ with the range chosen by NEEDLE replaced by REPLACEMENT, and nothing else changed."
   (multiple-value-bind (start end) (edit-range needle :offset offset :length length)
+    (concatenate 'string (subseq +edit-source+ 0 start) replacement
+                 (subseq +edit-source+ end))))
+
+(defun edit-expected-between (first-needle last-needle replacement)
+  "Return +EDIT-SOURCE+ with everything from FIRST-NEEDLE through the last LAST-NEEDLE replaced."
+  (let ((start (search first-needle +edit-source+))
+        (end (+ (search last-needle +edit-source+ :from-end t) (length last-needle))))
     (concatenate 'string (subseq +edit-source+ 0 start) replacement
                  (subseq +edit-source+ end))))
 
@@ -341,6 +353,270 @@ laid out on one line and on separate lines.")
                  'xml-well-formedness-error)
           :to-be-truthy))
 
+;;; Setting text
+
+(it "turns an empty element into one with text, keeping the rest of the tag"
+  (expect (edit-set "/root/bare/text()" "hi")
+          :to-equal (edit-expected "<bare/>" ">hi</bare>" :offset 5 :length 2))
+  (expect (edit-set "/root/spaced/text()" "hi")
+          :to-equal (edit-expected "<spaced />" ">hi</spaced>" :offset 8 :length 2)))
+
+(it "replaces text mixed with references and CDATA by escaped character data"
+  (expect (edit-set "/root/item/text()" "a<b>&c")
+          :to-equal (edit-expected "text &amp; &#65; &e; <![CDATA[<raw>]]>"
+                                   "a&lt;b&gt;&amp;c")))
+
+(it "keeps a CDATA section when the content is exactly one"
+  (expect (edit-set "/root/cdata/text()" "x < y & z")
+          :to-equal (edit-expected "<![CDATA[a < b]]>" "<![CDATA[x < y & z]]>")))
+
+(it "falls back to escaped text when a CDATA section cannot hold the value"
+  (expect (edit-set "/root/cdata/text()" "a]]>b")
+          :to-equal (edit-expected "<![CDATA[a < b]]>" "a]]&gt;b"))
+  (expect (edit-set "/root/cdata/text()" (format nil "a~Cb" #\Return))
+          :to-equal (edit-expected "<![CDATA[a < b]]>" "a&#13;b")))
+
+(it "replaces content made of character and entity references"
+  (expect (edit-set "/root/refs/text()" "plain")
+          :to-equal (edit-expected "&#65;&amp;&e;" "plain")))
+
+(it "replaces whitespace-only content"
+  (expect (edit-set "/root/blank/text()" "x")
+          :to-equal (edit-expected "<blank>   </blank>" "x" :offset 7 :length 3)))
+
+(it "removes the content when the value is empty"
+  (expect (edit-set "/root/item/text()" "")
+          :to-equal (edit-expected "text &amp; &#65; &e; <![CDATA[<raw>]]>" "")))
+
+(it "writes a line feed in the document's line break style and a carriage return as a reference"
+  (expect (edit-set "/root/refs/text()" (format nil "a~Cb" #\Linefeed))
+          :to-equal (edit-expected "&#65;&amp;&e;" (format nil "a~C~Cb" #\Return #\Linefeed)))
+  (expect (edit-set "/root/refs/text()" (format nil "a~C~Cb" #\Return #\Linefeed))
+          :to-equal (edit-expected "&#65;&amp;&e;"
+                                   (format nil "a&#13;~C~Cb" #\Return #\Linefeed))))
+
+(it "keeps a document without carriage returns free of them when setting text"
+  (expect (edit-xml-set (format nil "<r>~%  <a>x</a>~%</r>") "/r/a/text()"
+                        (format nil "p~Cq" #\Linefeed))
+          :to-equal (format nil "<r>~%  <a>p~Cq</a>~%</r>" #\Linefeed)))
+
+(it "sets text that selects back as the value that was set"
+  (dolist (value (list "plain" "" "  padded  " "a&b<c>d" "a]]>b" "<![CDATA[x]]>" "&#65;"
+                       (format nil "l1~Cl2" #\Linefeed) (format nil "cr~Cx" #\Return)
+                       (format nil "crlf~C~Cx" #\Return #\Linefeed)))
+    (dolist (path '("/root/bare/text()" "/root/cdata/text()" "/root/item/text()"))
+      (expect (xml-match-value (first (select-xml (edit-set path value) path)))
+              :to-equal value))))
+
+(it "refuses to replace content that holds elements, comments, or markup entities"
+  (dolist (path '("/root/nested/text()" "/root/noted/text()" "/root/holder/text()"
+                  "/root/text()"))
+    (expect (edit-refusal (lambda () (edit-set path "v")))
+            :to-equal (list 'xml-unsupported-edit :mixed-content path))))
+
+(it "refuses text for a path that matches nothing or more than one element"
+  (expect (edit-refusal (lambda () (edit-set "/root/nothing/text()" "v")))
+          :to-equal '(xml-path-error :no-match "/root/nothing/text()"))
+  (expect (edit-refusal (lambda () (edit-set "/root/*/text()" "v")))
+          :to-equal '(xml-path-error :multiple-matches "/root/*/text()")))
+
+(it "refuses text with a character that XML does not allow"
+  (expect (edit-refusal (lambda () (edit-set "/root/bare/text()" (format nil "a~Cb" (code-char 1)))))
+          :to-equal '(xml-edit-value-error :invalid-character "/root/bare/text()")))
+
+;;; Replacing an element
+
+(it "replaces an element with a fragment, verbatim"
+  (expect (edit-set "/root/bare" "<renamed k='v'>text</renamed>")
+          :to-equal (edit-expected "<bare/>" "<renamed k='v'>text</renamed>")))
+
+(it "trims the XML whitespace around the fragment"
+  (expect (edit-set "/root/bare" (format nil " ~C~C~C<renamed/>~C~C " #\Tab #\Return #\Linefeed
+                                          #\Linefeed #\Space))
+          :to-equal (edit-expected "<bare/>" "<renamed/>")))
+
+(it "converts the line breaks of a fragment to the document's style"
+  (expect (edit-set "/root/bare" (format nil "<l>~%  <e/>~%</l>"))
+          :to-equal (edit-expected "<bare/>" (format nil "<l>~C~C  <e/>~C~C</l>"
+                                                     #\Return #\Linefeed #\Return #\Linefeed)))
+  (expect (edit-set "/root/bare" (format nil "<l>~C~C<e/>~C</l>" #\Return #\Linefeed #\Return))
+          :to-equal (edit-expected "<bare/>" (format nil "<l>~C~C<e/>~C~C</l>"
+                                                     #\Return #\Linefeed #\Return #\Linefeed))))
+
+(it "keeps comments, CDATA, and both quote styles of a fragment verbatim"
+  (let ((fragment "<n a='1' b=\"2\"><!-- c --><![CDATA[<x>]]><?p d?></n>"))
+    (expect (edit-set "/root/spaced" fragment)
+            :to-equal (edit-expected "<spaced />" fragment))))
+
+(it "replaces a nested element"
+  (expect (edit-set "/root/list/entry" "<entry2/>")
+          :to-equal (edit-expected-between "<entry" "state=\"on\"/>" "<entry2/>")))
+
+(it "puts a fragment in the default namespace in scope"
+  (let ((result (edit-set "/root/bare" "<plain/>")))
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml result "/root/plain")))))
+            :to-equal "urn:default")))
+
+(it "resolves a prefix declared above the replaced element"
+  (let ((result (edit-set "/root/bare" "<p:thing p:x=\"1\"/>")))
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml result "/root/p:thing")))))
+            :to-equal "urn:p")))
+
+(it "ignores the declarations of the element being replaced"
+  (let ((result (edit-set "/root/p:item" "<p:x/>")))
+    (expect (xml-name-namespace-uri
+             (xml-element-name (xml-match-element (first (select-xml result "/root/p:x")))))
+            :to-equal "urn:p")))
+
+(it "replaces the document element"
+  (expect (edit-set "/root" "<root xmlns=\"urn:new\"><only/></root>")
+          :to-equal (edit-expected-between "<root xmlns=\"urn:default\"" "</root>"
+                                           "<root xmlns=\"urn:new\"><only/></root>")))
+
+(it "refuses a fragment that is not exactly one element"
+  (dolist (fragment '("" "  " "text" "<a/><b/>" "<a/>x" "<!--c--><a/>"))
+    (expect (edit-refusal (lambda () (edit-set "/root/bare" fragment)))
+            :to-equal '(xml-edit-value-error :not-single-element "/root/bare"))))
+
+(it "refuses a fragment that does not parse where it is written"
+  (dolist (fragment '("<a>" "<a></b>" "<z:a/>" "<a>&xxe;</a>" "<a>&e;</a>"
+                      "<!DOCTYPE a><a/>" "<?xml version=\"1.0\"?><a/>"
+                      "<!DOCTYPE a [<!ENTITY x SYSTEM \"x.ent\">]><a>&x;</a>"))
+    (expect (edit-refusal (lambda () (edit-set "/root/bare" fragment)))
+            :to-equal '(xml-edit-value-error :malformed-fragment "/root/bare"))))
+
+(it "keeps the parse condition of a malformed fragment as its cause"
+  (flet ((cause-type (fragment &rest options)
+           (type-of (xml-edit-value-error-cause
+                     (handler-case (apply #'edit-set "/root/bare" fragment options)
+                       (xml-edit-value-error (caught) caught))))))
+    (expect (cause-type "<a>") :to-equal 'xml-well-formedness-error)
+    (expect (cause-type "<z:a/>") :to-equal 'xml-namespace-error)
+    (expect (cause-type "<!DOCTYPE a><a/>" :external-entity-policy :skip)
+            :to-equal 'xml-well-formedness-error)))
+
+(it "refuses a fragment that breaks a resource limit of the caller"
+  (let ((limits (make-xml-resource-limits :max-attributes-per-element 3)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-set "<r xmlns:p=\"urn:p\"><a/></r>" "/r/a"
+                                          "<b x=\"1\" y=\"2\" z=\"3\" w=\"4\"/>"
+                                          :resource-limits limits)))
+            :to-equal '(xml-edit-value-error :malformed-fragment "/r/a"))))
+
+(it "refuses a fragment that is too deep for the wrapper it is parsed in"
+  (let ((limits (make-xml-resource-limits :max-depth 3)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-set "<r><x><y/></x></r>" "/r/x/y" "<a><b><c/></b></a>"
+                                          :resource-limits limits)))
+            :to-equal '(xml-edit-value-error :malformed-fragment "/r/x/y"))))
+
+(it "refuses a fragment that fits alone but exceeds the depth limit where it lands"
+  (let ((limits (make-xml-resource-limits :max-depth 3)))
+    (expect (edit-refusal (lambda ()
+                            (edit-xml-set "<r><x><y/></x></r>" "/r/x/y" "<a><b/></a>"
+                                          :resource-limits limits)))
+            :to-equal '(xml-unsupported-edit :verification-failed "/r/x/y"))
+    (expect (edit-xml-set "<r><x><y/></x></r>" "/r/x" "<a><b/></a>" :resource-limits limits)
+            :to-equal "<r><a><b/></a></r>")))
+
+(it "refuses a replacement of the document element that no longer matches the DOCTYPE"
+  (expect (edit-refusal (lambda () (edit-set "/root" "<other/>")))
+          :to-equal '(xml-unsupported-edit :verification-failed "/root")))
+
+(it "refuses a fragment with a character that XML does not allow"
+  (expect (edit-refusal (lambda () (edit-set "/root/bare" (format nil "<a>~C</a>" (code-char 0)))))
+          :to-equal '(xml-edit-value-error :invalid-character "/root/bare")))
+
+(it "refuses to replace a path that matches nothing or more than one element"
+  (expect (edit-refusal (lambda () (edit-set "/root/nothing" "<a/>")))
+          :to-equal '(xml-path-error :no-match "/root/nothing"))
+  (expect (edit-refusal (lambda () (edit-set "/root/*" "<a/>")))
+          :to-equal '(xml-path-error :multiple-matches "/root/*")))
+
+;;; Deleting an element
+
+(defun edit-line-and (text)
+  "Return the line break and indentation before a child element, then TEXT."
+  (concatenate 'string +spans-crlf+ "  " text))
+
+(it "deletes the first child with the line break before it"
+  (expect (edit-delete "/root/item")
+          :to-equal (edit-expected (edit-line-and "<item id=\"1\" name='n'>text &amp; &#65; &e; <![CDATA[<raw>]]></item>")
+                                   "")))
+
+(it "deletes a middle child with the line break before it"
+  (expect (edit-delete "/root/bare")
+          :to-equal (edit-expected (edit-line-and "<bare/>") "")))
+
+(it "deletes the last element child with the line break before it"
+  (expect (edit-delete "/root/noted")
+          :to-equal (edit-expected (edit-line-and "<noted><!-- c --></noted>") "")))
+
+(it "deletes the only child and leaves the end tag on its own line"
+  (expect (edit-delete "/root/list/entry")
+          :to-equal (edit-expected (concatenate 'string +spans-crlf+ "    <entry" +spans-crlf+
+                                                "        id=\"e1\"" +spans-crlf+
+                                                "        label='first'" +spans-crlf+
+                                                "        state=\"on\"/>")
+                                   "")))
+
+(it "deletes a spaced empty element"
+  (expect (edit-delete "/root/spaced")
+          :to-equal (edit-expected (edit-line-and "<spaced />") "")))
+
+(it "removes only the element when other content shares its line"
+  (expect (edit-xml-delete "<r><a/><b/></r>" "/r/b") :to-equal "<r><a/></r>")
+  (expect (edit-xml-delete "<r><a/><b/></r>" "/r/a") :to-equal "<r><b/></r>")
+  (expect (edit-xml-delete "<r>x <a/> y</r>" "/r/a") :to-equal "<r>x  y</r>")
+  (expect (edit-xml-delete (format nil "<r>~%  <!-- c --><a/>~%</r>") "/r/a")
+          :to-equal (format nil "<r>~%  <!-- c -->~%</r>")))
+
+(it "removes the line break before an element in documents of every line break style"
+  (dolist (break (list (string #\Linefeed) +spans-crlf+ (string #\Return)))
+    (expect (edit-xml-delete (format nil "<r>~A  <a/>~A  <b/>~A</r>" break break break) "/r/a")
+            :to-equal (format nil "<r>~A  <b/>~A</r>" break break))
+    (expect (edit-xml-delete (format nil "<r>~A  <a/>~A  <b/>~A</r>" break break break) "/r/b")
+            :to-equal (format nil "<r>~A  <a/>~A</r>" break break))))
+
+(it "leaves the whitespace around a deleted element when it belongs to character data"
+  (expect (edit-xml-delete (format nil "<r>foo~%  <a/></r>") "/r/a")
+          :to-equal (format nil "<r>foo~%  </r>"))
+  (expect (edit-xml-delete (format nil "<r>~%  <a/>~%bar</r>") "/r/a")
+          :to-equal (format nil "<r>~%  ~%bar</r>"))
+  (expect (edit-xml-delete (format nil "<r>&#10;  <a/></r>") "/r/a")
+          :to-equal (format nil "<r>&#10;  </r>")))
+
+(it "still removes the whitespace and line break when the text on both sides is plain whitespace"
+  (expect (edit-xml-delete (format nil "<r>~%  <a/>~%</r>") "/r/a")
+          :to-equal (format nil "<r>~%</r>"))
+  (expect (edit-xml-delete (format nil "<r>~%  <a/><b/></r>") "/r/a")
+          :to-equal (format nil "<r><b/></r>")))
+
+(it "removes tab indentation together with the line break"
+  (expect (edit-xml-delete (format nil "<r>~%~C<a/>~%</r>" #\Tab) "/r/a")
+          :to-equal (format nil "<r>~%</r>")))
+
+(it "deletes an element that no longer selects after the edit"
+  (expect (select-xml (edit-delete "/root/bare") "/root/bare") :to-equal nil))
+
+(it "refuses to delete the document element"
+  (expect (edit-refusal (lambda () (edit-delete "/root")))
+          :to-equal '(xml-unsupported-edit :root-element "/root"))
+  (expect (edit-refusal (lambda () (edit-delete "/*")))
+          :to-equal '(xml-unsupported-edit :root-element "/*")))
+
+(it "refuses to delete a path that matches nothing or more than one element"
+  (expect (edit-refusal (lambda () (edit-delete "/root/nothing")))
+          :to-equal '(xml-path-error :no-match "/root/nothing"))
+  (expect (edit-refusal (lambda () (edit-delete "/root/*")))
+          :to-equal '(xml-path-error :multiple-matches "/root/*")))
+
+(it "refuses to delete below an element that references a markup entity"
+  (expect (edit-refusal (lambda () (edit-delete "/root/holder/b")))
+          :to-equal '(xml-unsupported-edit :entity-reference "/root/holder/b")))
+
 ;;; Generated documents
 
 (defun edit-element-matches (source)
@@ -399,4 +675,66 @@ laid out on one line and on separate lines.")
                           :to-be-truthy)
                   (expect (select-xml result path) :to-equal nil))
                 (expect result :to-equal :attlist-declaration))))))
+    (expect (> edited 100) :to-be-truthy)))
+
+(defun edit-stage-c-documents ()
+  "Return generated documents, without those that have a reference after an empty document element."
+  (remove-if (lambda (source) (search "/>&" source))
+             (subseq (spans-generated-documents) 0 200)))
+
+(defun edit-removal-outside-p (source result start end)
+  "Return true when SOURCE and RESULT agree outside the element from START to END, allowing the line break before it to go."
+  (let ((prefix (or (mismatch source result) (length source)))
+        (suffix (let ((mismatch (mismatch source result :from-end t)))
+                  (if mismatch (- (length source) mismatch) (length source)))))
+    (and (>= prefix (cl-xml-kit::%edit-removal-start source start))
+         (>= suffix (- (length source) end)))))
+
+(it "sets the text of every generated element that is not mixed, and refuses the others as mixed"
+  (let ((edited 0))
+    (dolist (source (edit-stage-c-documents))
+      (dolist (match (edit-element-matches source))
+        (let* ((path (concatenate 'string (xml-match-path match) "/text()"))
+               (value (format nil "t&<>]]>~Cx" #\Linefeed))
+               (result (handler-case (edit-xml-set source path value)
+                         (xml-unsupported-edit (caught)
+                           (xml-edit-error-reason caught)))))
+          (if (stringp result)
+              (progn
+                (incf edited)
+                (expect (edit-outside-p source result (xml-match-start match)
+                                        (xml-match-end match))
+                        :to-be-truthy)
+                (expect (xml-match-value (first (select-xml result path))) :to-equal value))
+              (expect result :to-equal :mixed-content)))))
+    (expect (> edited 300) :to-be-truthy)))
+
+(it "replaces every generated element below the document element with a fragment"
+  (let ((edited 0))
+    (dolist (source (edit-stage-c-documents))
+      (dolist (match (edit-element-matches source))
+        (when (find #\/ (xml-match-path match) :start 1)
+          (let ((result (edit-xml-set source (xml-match-path match)
+                                      (format nil " <zz a=\"1\">~%t</zz>~%"))))
+            (incf edited)
+            (expect (edit-outside-p source result (xml-match-start match)
+                                    (xml-match-end match))
+                    :to-be-truthy)
+            (expect (subseq result (xml-match-start match) (+ (xml-match-start match) 10))
+                    :to-equal "<zz a=\"1\">")))))
+    (expect (> edited 100) :to-be-truthy)))
+
+(it "deletes every generated element below the document element"
+  (let ((edited 0))
+    (dolist (source (edit-stage-c-documents))
+      (dolist (match (edit-element-matches source))
+        (when (find #\/ (xml-match-path match) :start 1)
+          (let ((result (edit-xml-delete source (xml-match-path match))))
+            (incf edited)
+            (expect (edit-removal-outside-p source result (xml-match-start match)
+                                            (xml-match-end match))
+                    :to-be-truthy)
+            (expect (>= (- (length source) (length result))
+                        (- (xml-match-end match) (xml-match-start match)))
+                    :to-be-truthy)))))
     (expect (> edited 100) :to-be-truthy)))

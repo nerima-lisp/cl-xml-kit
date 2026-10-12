@@ -89,7 +89,6 @@
          :documentation "The path to the offending object, when available."))
   (:documentation "A tree or output stream could not be serialized."))
 
-
 (define-condition xml-edit-error (xml-kit-error)
   ((path :initarg :path :initform nil :reader xml-edit-error-path
          :documentation "The path the caller supplied.")
