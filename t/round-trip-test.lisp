@@ -182,3 +182,18 @@
         (expect (round-trip-signature canonical :include-comments nil)
                 :to-equal (round-trip-signature document :include-comments nil))))))
 
+(it "round-trips a less-than character in an attribute value"
+  (let* ((document
+           (make-xml-document
+            :children
+            (list (make-xml-element
+                   :name (make-xml-name :local-name "root")
+                   :attributes (list (make-xml-attribute
+                                      :name (make-xml-name :local-name "v")
+                                      :value "a<b&c"))))))
+         (serialized (xml->string document)))
+    (expect serialized :to-contain "&lt;")
+    (expect (xml-attribute-value
+             (first (xml-element-attributes
+                     (first (xml-document-children (parse-xml serialized))))))
+            :to-equal "a<b&c")))

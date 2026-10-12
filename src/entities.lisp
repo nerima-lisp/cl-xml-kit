@@ -197,7 +197,7 @@
 
 (defun %record-expanded-character (context character stream attribute-p
                                    &optional generated-p)
-  (when (and attribute-p (char= character #\<))
+  (when (and attribute-p generated-p (char= character #\<))
     (%entity-error context "An attribute value cannot contain '<'."
                    :no-lt-in-attribute-values "a character other than <"))
   (when (and attribute-p generated-p (char= character #\&))

@@ -102,3 +102,16 @@
             :to-equal (format nil "AB~C" (code-char #xAF)))
     (expect (xml-text-data (first (xml-element-children root)))
             :to-equal (format nil "AB~C" (code-char #xAF)))))
+
+(it "accepts less-than written as a reference in an attribute value"
+  (let ((root (first (xml-document-children
+                      (parse-xml "<a b=\"&lt;\" c='&#60;' d=\"x&#x3C;y\"/>")))))
+    (expect (mapcar #'xml-attribute-value (xml-element-attributes root))
+            :to-equal '("<" "<" "x<y"))))
+
+(it "rejects an entity that generates less-than in an attribute value"
+  (expect (typep (handler-case
+                     (parse-xml "<!DOCTYPE a [<!ENTITY e '&#60;'>]><a b=\"&e;\"/>")
+                   (xml-well-formedness-error (caught) caught))
+                 'xml-well-formedness-error)
+          :to-be-truthy))

@@ -113,10 +113,10 @@
               :to-be-truthy))))
 
 (it "rejects less-than generated in an attribute value"
-  (let ((context (cl-xml-kit::make-xml-entity-context))
+  (let ((context (cl-xml-kit::parse-xml-internal-subset "<!ENTITY e '&#60;'>"))
         (condition nil))
     (handler-case
-        (cl-xml-kit::expand-xml-entity-references "&lt;" context :attribute-p t)
+        (cl-xml-kit::expand-xml-entity-references "&e;" context :attribute-p t)
       (xml-well-formedness-error (caught) (setf condition caught)))
     (expect (xml-well-formedness-error-constraint condition)
             :to-equal :no-lt-in-attribute-values)))
@@ -157,3 +157,20 @@
       (xml-well-formedness-error (caught) (setf condition caught)))
     (expect (xml-well-formedness-error-constraint condition)
             :to-equal :character-reference)))
+
+(it "accepts the predefined lt and less-than character references in an attribute value"
+  (expect (cl-xml-kit::expand-xml-entity-references
+           "a&lt;b&#60;c&#x3C;d" (cl-xml-kit::make-xml-entity-context) :attribute-p t)
+          :to-equal "a<b<c<d"))
+
+(it "rejects less-than that a nested entity generates in an attribute value"
+  (dolist (subset '("<!ENTITY outer '[&inner;]'><!ENTITY inner '&#60;'>"
+                    "<!ENTITY outer '[&inner;]'><!ENTITY inner 'a<b'>"
+                    "<!ENTITY outer 'x<y'>"))
+    (let ((context (cl-xml-kit::parse-xml-internal-subset subset))
+          (condition nil))
+      (handler-case
+          (cl-xml-kit::expand-xml-entity-references "&outer;" context :attribute-p t)
+        (xml-well-formedness-error (caught) (setf condition caught)))
+      (expect (xml-well-formedness-error-constraint condition)
+              :to-equal :no-lt-in-attribute-values))))
