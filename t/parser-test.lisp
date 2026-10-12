@@ -58,3 +58,23 @@
     (expect (handler-case (progn (next-xml-event parser) nil)
               (xml-parser-state-error () t)) :to-equal t)))
 
+(it "signals a well-formedness error for a malformed character reference"
+  (dolist (source (list "<a>&#1z;</a>" "<a b=\"&#1z;\"/>" "<a>&#x4G;</a>"
+                        "<a>&#x;</a>" "<a b='&#x;'/>"
+                        (format nil "<a>&#~C~C;</a>" (code-char #x666) (code-char #x665))
+                        (format nil "<a b=\"&#~C~C;\"/>" (code-char #x666) (code-char #x665))
+                        (format nil "<!DOCTYPE a [<!ENTITY e '&#~C~C;'>]><a/>"
+                                (code-char #x666) (code-char #x665))
+                        "<!DOCTYPE a [<!ENTITY e '&#1z;'>]><a/>"))
+    (expect (typep (handler-case (progn (parse-xml source) nil)
+                     (xml-well-formedness-error (caught) caught))
+                   'xml-well-formedness-error)
+            :to-be-truthy)))
+
+(it "decodes decimal and hexadecimal character references in content and attributes"
+  (let ((root (first (xml-document-children
+                      (parse-xml "<a b=\"&#65;&#x42;&#xaF;\">&#x41;&#66;&#xAf;</a>")))))
+    (expect (xml-attribute-value (first (xml-element-attributes root)))
+            :to-equal (format nil "AB~C" (code-char #xAF)))
+    (expect (xml-text-data (first (xml-element-children root)))
+            :to-equal (format nil "AB~C" (code-char #xAF)))))

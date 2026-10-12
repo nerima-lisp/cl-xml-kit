@@ -223,3 +223,20 @@
               (progn (cl-xml-kit::make-xml-token :kind :eof :end -1) nil)
             (cl-xml-kit:xml-input-error () t))
           :to-be-truthy))
+
+(it "rejects numeric references with a non-digit character in content and attributes"
+  (dolist (input (list "&#1z;" "&#4a;" "&#x4G;" "&#x41 ;" "&#x;" "&#X41;"
+                       (format nil "&#~C~C;" (code-char #x666) (code-char #x665))
+                       (format nil "&#x~C~C;" (code-char #xFF14) (code-char #xFF11))
+                       (format nil "&#x~C;" (code-char #xFF21))
+                       "<a b=\"&#1z;\">"
+                       (format nil "<a b='&#~C~C;'>" (code-char #x666) (code-char #x665))))
+    (let ((condition (tokenizer-condition input)))
+      (expect (typep condition 'cl-xml-kit:xml-well-formedness-error)
+              :to-equal t)
+      (expect (cl-xml-kit:xml-well-formedness-error-constraint condition)
+              :to-equal :character-reference))))
+
+(it "accepts hexadecimal references in either letter case"
+  (expect (mapcar #'second (tokenizer-tokens "&#xaF;&#xAf;&#x41;"))
+          :to-equal '("#xaF" "#xAf" "#x41" nil)))

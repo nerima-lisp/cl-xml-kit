@@ -136,3 +136,17 @@
          (loop for index fixnum from 1 below length
                always (xml-ncname-char-p (schar value index))))))
 
+(defun xml-digit-weight (character radix)
+  "Return the value of CHARACTER as an ASCII digit in RADIX 10 or 16, or NIL.
+
+XML CharRef [66] admits only [0-9] and [0-9a-fA-F]. DIGIT-CHAR-P also accepts
+digits of other scripts, so it cannot validate a reference."
+  (declare (type character character)
+           (type (member 10 16) radix))
+  (let ((code (char-code character)))
+    (declare (type fixnum code))
+    (cond
+      ((<= #x30 code #x39) (- code #x30))
+      ((= radix 10) nil)
+      ((<= #x41 code #x46) (- code #x37))
+      ((<= #x61 code #x66) (- code #x57)))))

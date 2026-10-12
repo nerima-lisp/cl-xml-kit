@@ -123,3 +123,18 @@
            '("name" "a-._9")
            '("" "1name" "a:b"))))
 
+(it "weighs ASCII decimal and hexadecimal digits for character references"
+  (expect (mapcar (lambda (character) (cl-xml-kit::xml-digit-weight character 10))
+                  '(#\0 #\9 #\a #\F))
+          :to-equal '(0 9 nil nil))
+  (expect (mapcar (lambda (character) (cl-xml-kit::xml-digit-weight character 16))
+                  '(#\0 #\9 #\a #\f #\A #\F #\g #\G))
+          :to-equal '(0 9 10 15 10 15 nil nil)))
+
+(it "gives no weight to digits and letters of other scripts"
+  ;; Arabic-Indic, Devanagari, and fullwidth digits and letters, which
+  ;; DIGIT-CHAR-P weighs on SBCL.
+  (dolist (code '(#x660 #x665 #x966 #xFF10 #xFF19 #xFF21 #xFF41))
+    (let ((character (xml-test-character code)))
+      (expect (cl-xml-kit::xml-digit-weight character 10) :to-equal nil)
+      (expect (cl-xml-kit::xml-digit-weight character 16) :to-equal nil))))

@@ -260,18 +260,16 @@ cursor, so repeated calls consume the input in order."
                          :constraint :entity-reference))
   (if (char= (char body 0) #\#)
       (let* ((hexadecimal (and (> (length body) 1)
-                               (char-equal (char body 1) #\x)))
-             (digit-start (if hexadecimal 2 1)))
+                               (char= (char body 1) #\x)))
+             (digit-start (if hexadecimal 2 1))
+             (radix (if hexadecimal 16 10)))
         (when (or (= digit-start (length body))
                   (loop for index from digit-start below (length body)
-                        never (if hexadecimal
-                                  (digit-char-p (char body index) 16)
-                                  (digit-char-p (char body index) 10))))
+                        thereis (not (xml-digit-weight (char body index) radix))))
           (%xml-tokenizer-fail tokenizer
                                "Malformed numeric character reference."
                                :constraint :character-reference))
-        (let ((code (parse-integer body :start digit-start
-                                   :radix (if hexadecimal 16 10))))
+        (let ((code (parse-integer body :start digit-start :radix radix)))
           (unless (and (<= 0 code) (<= code #x10FFFF)
                        (%xml-tokenizer-valid-char-p (code-char code)))
             (%xml-tokenizer-fail tokenizer

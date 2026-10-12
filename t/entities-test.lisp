@@ -132,3 +132,28 @@
     (expect (xml-well-formedness-error-constraint condition)
             :to-equal :no-amp-in-attribute-values)))
 
+(it "expands decimal and hexadecimal references in either letter case"
+  (expect (cl-xml-kit::expand-xml-entity-references
+           "&#65;&#x41;&#xAf;&#xaF;" (cl-xml-kit::make-xml-entity-context))
+          :to-equal (format nil "AA~C~C" (code-char #xAF) (code-char #xAF))))
+
+(it "rejects non-ASCII digits in character references"
+  (dolist (reference (list (format nil "&#~C~C;" (code-char #x666) (code-char #x665))
+                           (format nil "&#x~C~C;" (code-char #xFF14) (code-char #xFF11))
+                           (format nil "&#x~C;" (code-char #xFF21))))
+    (let ((condition nil))
+      (handler-case
+          (cl-xml-kit::expand-xml-entity-references
+           reference (cl-xml-kit::make-xml-entity-context))
+        (xml-well-formedness-error (caught) (setf condition caught)))
+      (expect (xml-well-formedness-error-constraint condition)
+              :to-equal :character-reference))))
+
+(it "rejects non-ASCII digits in a character reference inside an entity value"
+  (let ((condition nil))
+    (handler-case
+        (cl-xml-kit::parse-xml-internal-subset
+         (format nil "<!ENTITY e '&#~C~C;'>" (code-char #x666) (code-char #x665)))
+      (xml-well-formedness-error (caught) (setf condition caught)))
+    (expect (xml-well-formedness-error-constraint condition)
+            :to-equal :character-reference)))

@@ -155,7 +155,7 @@
     (let ((value 0)
           (radix (if hex-p 16 10)))
       (loop for character across digits
-            for number = (digit-char-p character radix)
+            for number = (xml-digit-weight character radix)
             do (unless number
                  (%entity-error context "Malformed XML character reference."
                                 :character-reference))
