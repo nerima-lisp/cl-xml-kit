@@ -31,7 +31,7 @@ External entity resolution is rejected by default.
 
 ## Reference
 
-The [architecture reference](design/architecture.md) describes the parser
+The [architecture reference](https://github.com/nerima-lisp/cl-xml-kit/blob/main/docs/design/architecture.md) describes the parser
 boundary, node model, event protocol, serialization, security controls, and
 verification commands. The repository README covers development and release
 commands.
