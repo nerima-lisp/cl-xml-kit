@@ -46,11 +46,28 @@
         (%serializer-error attribute path (xml-message :repeated-expanded-attribute)))
       (values uri prefix))))
 
+(defun %attribute-prefix-named-p (attributes prefix)
+  "Return true when an attribute of ATTRIBUTES is written with the explicit PREFIX."
+  (loop for attribute in attributes
+        thereis (equal (xml-name-prefix (xml-attribute-name attribute)) prefix)))
+
+(defun %reusable-prefix (uri scope attributes)
+  "Return a prefix that SCOPE binds to URI and no attribute of ATTRIBUTES names, or NIL.
+
+An attribute naming that prefix could rebind it on this element after an
+earlier attribute had reused it."
+  (loop for (prefix . bound-uri) in scope
+        when (and prefix
+                  (string= bound-uri uri)
+                  (not (%attribute-prefix-named-p attributes prefix)))
+          return prefix))
+
 (defun %attribute-bindings (state attributes scope declarations path)
   "Validate ATTRIBUTES and bind their namespaces.
 
 Return SCOPE and DECLARATIONS extended by the bindings, and the prefix to write
-for each attribute. A namespaced attribute without a prefix gets a generated one."
+for each attribute. A namespaced attribute without a prefix reuses a prefix
+already bound to its namespace, or else gets a generated one."
   (let ((path (and attributes (append path (list :attribute))))
         (prefixes nil))
     (loop for tail on attributes
@@ -58,7 +75,8 @@ for each attribute. A namespaced attribute without a prefix gets a generated one
           do (multiple-value-bind (uri prefix) (%checked-attribute-name attributes tail path)
                (cond
                  ((and (null prefix) (plusp (length uri)))
-                  (setf prefix (%generated-prefix state scope)))
+                  (setf prefix (or (%reusable-prefix uri scope attributes)
+                                   (%generated-prefix state scope))))
                  ((and prefix (zerop (length uri)))
                   (%serializer-error attribute path
                                      (xml-message :prefixed-attribute-needs-uri))))

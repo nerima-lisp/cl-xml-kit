@@ -70,6 +70,39 @@
             :to-equal
             "<root xmlns:nsA=\"urn:x\" xmlns:nsB=\"urn:y\" nsA:a=\"1\" nsB:b=\"2\"/>")))
 
+(it "reuses a prefix already bound to the namespace of an unprefixed attribute"
+  (flet ((attribute (local-name namespace-uri value)
+           (make-xml-attribute
+            :name (serializer-name local-name :namespace-uri namespace-uri)
+            :value value)))
+    (expect (xml->string
+             (serializer-element "root" :attributes (list (attribute "a" "urn:x" "1")
+                                                          (attribute "b" "urn:x" "2"))))
+            :to-equal "<root xmlns:nsA=\"urn:x\" nsA:a=\"1\" nsA:b=\"2\"/>")
+    (expect (xml->string
+             (serializer-element "root" :namespace-uri "urn:x" :prefix "p"
+                                        :attributes (list (attribute "a" "urn:x" "1"))))
+            :to-equal "<p:root xmlns:p=\"urn:x\" p:a=\"1\"/>")
+    (expect (xml->string
+             (serializer-element
+              "root" :attributes (list (attribute "lang" "http://www.w3.org/XML/1998/namespace" "en"))))
+            :to-equal "<root xml:lang=\"en\"/>")))
+
+(it "does not reuse a prefix that another attribute of the element names"
+  (let ((child (serializer-element
+                "c" :attributes (list (make-xml-attribute
+                                       :name (serializer-name "a" :namespace-uri "urn:x")
+                                       :value "1")
+                                      (make-xml-attribute
+                                       :name (serializer-name "b" :namespace-uri "urn:y"
+                                                                  :prefix "p")
+                                       :value "2")))))
+    (expect (xml->string (serializer-element "r" :namespace-uri "urn:x" :prefix "p"
+                                                 :children (list child)))
+            :to-equal (concatenate 'string
+                                   "<p:r xmlns:p=\"urn:x\"><c xmlns:nsA=\"urn:x\""
+                                   " xmlns:p=\"urn:y\" nsA:a=\"1\" p:b=\"2\"/></p:r>"))))
+
 (it "rejects an element name whose prefix the element declares for another URI"
   (let ((element (serializer-element
                   "root" :namespace-uri "urn:a" :prefix "p"
