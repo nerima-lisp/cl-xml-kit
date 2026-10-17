@@ -56,7 +56,8 @@
       lispDependencies = ctx: [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
       lispCheckDependencies = ctx: [ cl-weave.packages.${ctx.system}.cl-weave ];
 
-      # W5 XMLConf fetch block. W5 owns the archive input and its test derivation.
+      sourceInclude = [ ./scripts/xmlconf-exclusions.sexp ];
+
       extraOutputs =
         ctx:
         let
@@ -64,43 +65,91 @@
             url = "https://www.w3.org/XML/Test/xmlts20130923.tar.gz";
             sha256 = "9b61db9f5dbffa545f4b8d78422167083a8568c59bd1129f94138f936cf6fc1f";
           };
-          xmlconfExclusions = ./scripts/xmlconf-exclusions.sexp;
+          xmlconfReport = "xmlconf-report.txt";
+          xmlconfExpectedLines = [
+            "  catalogs: 22"
+            "  tests: 2585"
+            "  accepted: 909"
+            "  rejected: 948"
+            "  skipped: 65"
+            "  excluded: 663"
+            "  output-cases: 376"
+            "  unmatched-exclusions: 0"
+            "  passed: 353"
+            "  failed: 0"
+            "  skipped: 1504"
+          ];
           xmlconfCheck =
-            ctx.pkgs.runCommand "cl-xml-kit-xmlconf-catalog"
-              {
-                nativeBuildInputs = [
-                  ctx.pkgs.gnutar
-                  ctx.pkgs.gzip
-                  ctx.pkgs.sbcl
-                ];
-              }
-              ''
-                catalog_root="$TMPDIR/xmlconf"
-                mkdir -p "$catalog_root"
-                tar -xzf ${xmlconfArchive} -C "$catalog_root"
-                export XML_KIT_XMLCONF_DIR="$catalog_root/xmlconf"
-                export XML_KIT_XMLCONF_EXCLUSIONS="${xmlconfExclusions}"
-                ${ctx.pkgs.sbcl}/bin/sbcl --noinform --disable-debugger \
-                  --script "${ctx.src}/scripts/xmlconf-runner.lisp" > "$out"
-                grep -Fx '  catalogs: 22' "$out"
-                grep -Fx '  tests: 2585' "$out"
-                grep -Fx '  accepted: 909' "$out"
-                grep -Fx '  rejected: 948' "$out"
-                grep -Fx '  skipped: 65' "$out"
-                grep -Fx '  excluded: 663' "$out"
-                grep -Fx '  output-cases: 376' "$out"
-                grep -Fx '  unmatched-exclusions: 0' "$out"
-                echo "XMLConf catalog check passed: 2585 catalog tests, 1857 selected cases"
-              '';
-        in
-        {
-          checks.xmlconf = xmlconfCheck;
-          apps.bench = ctx.cl.mkTestApp {
+            (ctx.cl.mkCommandCheck {
+              drv = ctx.package;
+              name = "cl-xml-kit-xmlconf";
+              command = [
+                (ctx.pkgs.lib.getExe ctx.pkgs.sbcl)
+                "--script"
+                "scripts/xmlconf-runner.lisp"
+                "--run"
+                "--catalog-dir"
+                "xmlconf-corpus/xmlconf"
+                "--report"
+                xmlconfReport
+              ];
+              artifacts = [ xmlconfReport ];
+              validationCommands = map (
+                line: "grep -Fx -- ${ctx.pkgs.lib.escapeShellArg line} ${xmlconfReport}"
+              ) xmlconfExpectedLines;
+              timeoutSeconds = 300;
+              nativeBuildInputs = [
+                ctx.pkgs.gnutar
+                ctx.pkgs.gzip
+              ];
+            }).overrideAttrs
+              (old: {
+                preCheck = (old.preCheck or "") + ''
+                  mkdir xmlconf-corpus
+                  tar -xzf ${xmlconfArchive} -C xmlconf-corpus
+                '';
+              });
+
+          benchApp = ctx.cl.mkTestApp {
             pname = "cl-xml-kit-bench";
             inherit (ctx) src;
             runner = "run-benchmarks.lisp";
             lispDependencies = [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
             description = "Run cl-xml-kit benchmarks";
+          };
+          # A path: flake carries neither rev nor dirtyRev, so the benchmark
+          # reports the revision as unknown instead of guessing.
+          benchSource =
+            if self ? rev then
+              {
+                revision = self.rev;
+                state = "clean";
+              }
+            else if self ? dirtyRev then
+              {
+                revision = ctx.pkgs.lib.removeSuffix "-dirty" self.dirtyRev;
+                state = "dirty";
+              }
+            else
+              {
+                revision = "unknown";
+                state = "unknown";
+              };
+          benchRunner = ctx.pkgs.writeShellApplication {
+            name = "cl-xml-kit-bench";
+            text = ''
+              export BENCH_REVISION=${ctx.pkgs.lib.escapeShellArg benchSource.revision}
+              export BENCH_SOURCE_STATE=${benchSource.state}
+              exec ${benchApp.program} "$@"
+            '';
+          };
+        in
+        {
+          checks.xmlconf = xmlconfCheck;
+          apps.bench = {
+            type = "app";
+            program = ctx.pkgs.lib.getExe benchRunner;
+            meta.description = "Run cl-xml-kit benchmarks";
           };
         };
       timeoutSeconds = 120;

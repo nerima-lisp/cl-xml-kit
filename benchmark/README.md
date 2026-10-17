@@ -18,6 +18,9 @@ The bootstrap loads the `cl-xml-kit/benchmark` ASDF system, so ASDF must be
 able to find the runtime dependency `cl-codec-kit`. A load failure stops the
 run.
 
+`nix run .#bench` runs the same harness with the dependencies supplied by the
+flake.
+
 The controls are deterministic and reject values below the release standard:
 
 | Variable | Default | Constraint |
@@ -27,10 +30,15 @@ The controls are deterministic and reject values below the release standard:
 | `BENCH_SAMPLES` | `10` | integer, at least 10 |
 | `BENCH_OPERATIONS` | `all` | comma-separated `parse`, `utf8-parse`, `dom`, `pull`, `serialize`, or `all` |
 | `BENCH_WORKLOADS` | `all` | comma-separated workload IDs or `all` |
-| `BENCH_COMMAND_TIMEOUT` | `30` | seconds, at least 1 |
+| `BENCH_REVISION` | `unknown` | source revision recorded in the metadata |
+| `BENCH_SOURCE_STATE` | `unknown` | `clean`, `dirty`, or `unknown` |
 
-`BENCH_COMMAND_TIMEOUT` bounds each metadata command (`git` and `shasum`).
-A command that runs longer is killed and the benchmark exits with an error.
+The harness starts no version-control command, so it records only the
+revision and working-tree state its caller passes. `nix run .#bench` sets both
+from the flake: a clean Git checkout gives its commit and `clean`, a modified
+one gives its commit and `dirty`, and a `path:` flake or a jj workspace gives
+`unknown` for both. For a manual run, set them yourself, for example
+`BENCH_REVISION="$(jj log --no-graph -r @- -T commit_id)"`.
 
 Workloads are `small`, `text-1mib`, `deep-512`, `attributes-128`,
 `namespaces`, and `mixed-content`. The seed is included in generated payloads
@@ -39,23 +47,27 @@ section. Allocation is recorded with `sb-ext:get-bytes-consed`.
 
 The TSV contains metadata, round order, and result rows. Result rows include
 input bytes, sample count, median/minimum/maximum wall time, and allocation
-bytes. Metadata includes source revision, dirty state, runtime, selection,
-and source hashes.
+bytes. Metadata includes the source revision and state, runtime, selection,
+and MD5 digests of the benchmark sources.
 
 ## XMLConf
 
-The catalog audit runs in the Nix flake check. To inspect a downloaded XMLConf
-tree directly:
+The `xmlconf` flake check runs every selected case and compares the catalog
+counts and the passed, failed, and skipped totals with fixed values in
+`flake.nix`. To inspect a downloaded XMLConf tree directly:
 
 ```sh
 XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
-  sbcl --script scripts/xmlconf-runner.lisp
+  sbcl --script scripts/xmlconf-runner.lisp --run
 ```
 
-With `--run`, the runner parses the selected valid, invalid, and not-wf cases
-instead of printing the catalog counts, and exits with status 1 when any case
-fails. It skips cases outside this implementation profile, including external
-DTD/entity resolution, XML 1.1, and DTD validation declarations. Namespace
+Without `--run`, the runner prints only the catalog counts. With `--run`, it
+also parses the selected valid, invalid, and not-wf cases, prints each outcome
+and the totals, and exits with status 1 when any case fails. `--report FILE`
+writes the output to FILE. Each case is read as octets, so UTF-8 and UTF-16
+documents take the same input path as `parse-xml`. The runner skips cases
+outside this implementation profile, including external DTD/entity
+resolution, XML 1.1, and DTD validation declarations. Namespace
 well-formedness errors remain fatal for the namespace-aware parser. A case
 that runs longer than `XML_KIT_XMLCONF_CASE_TIMEOUT` seconds (default 10) is
 reported as failed. An unknown option is a usage error (exit status 2);
