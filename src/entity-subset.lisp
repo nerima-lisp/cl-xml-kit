@@ -8,6 +8,19 @@
         (%entity-error context (xml-message :unterminated-entity-declaration)
                        :entity-declaration))))
 
+(defun %quote-at-p (text position)
+  (and (< position (length text))
+       (member (char text position) '(#\" #\'))))
+
+(defun %close-at-p (text position)
+  (and (< position (length text))
+       (char= (char text position) #\>)))
+
+(defun %text-starts-with-p (text index prefix)
+  (let ((end (+ index (length prefix))))
+    (and (<= end (length text))
+         (string= prefix text :start2 index :end2 end))))
+
 (defun %word-end (text position)
   (loop while (and (< position (length text))
                    (not (xml-space-char-p (char text position)))
@@ -15,82 +28,95 @@
         do (incf position)
         finally (return position)))
 
-(defun %parse-entity-declaration-at (text start context)
-  (let* ((length (length text))
-         (position (%skip-xml-space text start))
-         (parameter-p nil))
-    (when (and (< position length) (char= (char text position) #\%))
+(defun %parse-entity-declaration-head (text start context)
+  "Read the optional % and the entity name after <!ENTITY at START.
+
+Return the name, whether it names a parameter entity, and the position of the
+entity definition that follows the separating space."
+  (let ((position (%skip-xml-space text start))
+        (parameter-p nil))
+    (when (and (< position (length text)) (char= (char text position) #\%))
       (setf parameter-p t
             position (%skip-xml-space text (1+ position))))
-    (unless (and (< position length) (xml-name-start-char-p (char text position)))
+    (unless (and (< position (length text))
+                 (xml-name-start-char-p (char text position)))
       (%entity-error context (xml-message :entity-declaration-needs-name)
                      :entity-declaration))
-    (let ((name-start position))
-      (loop while (and (< position length)
-                       (xml-name-char-p (char text position)))
-            do (incf position))
-      (let ((name (subseq text name-start position)))
-        (%check-entity-name-length context name)
-        (let ((separator position))
-          (setf position (%skip-xml-space text position))
-          (when (= separator position)
-            (%entity-error
-             context
-             (xml-message :entity-name-not-separated)
-             :entity-declaration)))
-        (when (>= position length)
-          (%entity-error context (xml-message :entity-declaration-incomplete)
-                         :entity-declaration))
-        (cond
-          ((member (char text position) '(#\" #\'))
-           (let* ((end (%quoted-string-end text position context))
-                  (replacement (subseq text (1+ position) end))
-                  (after (%skip-xml-space text (1+ end))))
-             (%validate-entity-value replacement context)
-             (unless (and (< after length) (char= (char text after) #\>))
-               (%entity-error context (xml-message :entity-declaration-needs-close)
-                              :entity-declaration))
-             (values (make-xml-entity-declaration
-                      :name name :replacement-text replacement
-                      :parameter-p parameter-p)
-                     (1+ after))))
-          (t
-           (let* ((keyword-end (%word-end text position))
-                  (keyword (subseq text position keyword-end)))
-             (unless (member keyword '("SYSTEM" "PUBLIC") :test #'string=)
-               (%entity-error context (xml-message :entity-declaration-needs-value)
-                              :entity-declaration))
-             (setf position (%skip-xml-space text keyword-end))
-             (unless (and (< position length)
-                          (member (char text position) '(#\" #\')))
-               (%entity-error context (xml-message :external-entity-needs-system-id)
-                              :entity-declaration))
-             (let* ((first-end (%quoted-string-end text position context))
-                    (first-id (subseq text (1+ position) first-end))
-                    (after (%skip-xml-space text (1+ first-end)))
-                    (public-id (and (string= keyword "PUBLIC") first-id))
-                    (system-id nil))
-               (if (string= keyword "PUBLIC")
-                   (progn
-                     (unless (and (< after length)
-                                  (member (char text after) '(#\" #\')))
-                       (%entity-error context (xml-message :public-needs-system-id)
-                                      :entity-declaration))
-                     (let ((system-end (%quoted-string-end text after context)))
-                       (setf system-id (subseq text (1+ after) system-end)
-                             after (%skip-xml-space text (1+ system-end)))))
-                   (setf system-id first-id))
-               (unless (and (< after length) (char= (char text after) #\>))
-                 (let ((closing (position #\> text :start after)))
-                   (unless closing
-                     (%entity-error context
-                                    (xml-message :external-entity-declaration-incomplete)
-                                    :entity-declaration))
-                   (setf after closing)))
-               (values (make-xml-entity-declaration
-                        :name name :parameter-p parameter-p :external-p t
-                        :public-id public-id :system-id system-id)
-                       (1+ after))))))))))
+    (let* ((name-end (%name-end text position))
+           (name (subseq text position name-end))
+           (definition (%skip-xml-space text name-end)))
+      (%check-entity-name-length context name)
+      (when (= definition name-end)
+        (%entity-error context (xml-message :entity-name-not-separated)
+                       :entity-declaration))
+      (when (>= definition (length text))
+        (%entity-error context (xml-message :entity-declaration-incomplete)
+                       :entity-declaration))
+      (values name parameter-p definition))))
+
+(defun %parse-internal-entity-definition (text position context name parameter-p)
+  (let* ((end (%quoted-string-end text position context))
+         (replacement (subseq text (1+ position) end))
+         (after (%skip-xml-space text (1+ end))))
+    (%validate-entity-value replacement context)
+    (unless (%close-at-p text after)
+      (%entity-error context (xml-message :entity-declaration-needs-close)
+                     :entity-declaration))
+    (values (make-xml-entity-declaration
+             :name name :replacement-text replacement :parameter-p parameter-p)
+            (1+ after))))
+
+(defun %parse-external-id (text position context)
+  "Read a SYSTEM or PUBLIC ExternalID at POSITION.
+
+Return the public ID or NIL, the system ID, and the position after the IDs and
+any following space."
+  (let* ((keyword-end (%word-end text position))
+         (keyword (subseq text position keyword-end))
+         (public-p (string= keyword "PUBLIC")))
+    (unless (or public-p (string= keyword "SYSTEM"))
+      (%entity-error context (xml-message :entity-declaration-needs-value)
+                     :entity-declaration))
+    (setf position (%skip-xml-space text keyword-end))
+    (unless (%quote-at-p text position)
+      (%entity-error context (xml-message :external-entity-needs-system-id)
+                     :entity-declaration))
+    (let* ((first-end (%quoted-string-end text position context))
+           (first-id (subseq text (1+ position) first-end))
+           (after (%skip-xml-space text (1+ first-end))))
+      (if (not public-p)
+          (values nil first-id after)
+          (progn
+            (unless (%quote-at-p text after)
+              (%entity-error context (xml-message :public-needs-system-id)
+                             :entity-declaration))
+            (let ((system-end (%quoted-string-end text after context)))
+              (values first-id
+                      (subseq text (1+ after) system-end)
+                      (%skip-xml-space text (1+ system-end)))))))))
+
+(defun %parse-external-entity-definition (text position context name parameter-p)
+  (multiple-value-bind (public-id system-id after)
+      (%parse-external-id text position context)
+    (unless (%close-at-p text after)
+      (setf after (or (position #\> text :start after)
+                      (%entity-error
+                       context (xml-message :external-entity-declaration-incomplete)
+                       :entity-declaration))))
+    (values (make-xml-entity-declaration
+             :name name :parameter-p parameter-p :external-p t
+             :public-id public-id :system-id system-id)
+            (1+ after))))
+
+(defun %parse-entity-declaration-at (text start context)
+  "Parse the entity declaration whose name part begins at START.
+
+Return the declaration and the position after its closing >."
+  (multiple-value-bind (name parameter-p position)
+      (%parse-entity-declaration-head text start context)
+    (if (%quote-at-p text position)
+        (%parse-internal-entity-definition text position context name parameter-p)
+        (%parse-external-entity-definition text position context name parameter-p))))
 
 (defun %skip-comment (text start context)
   (let ((end (search "-->" text :start2 start)))
@@ -117,19 +143,64 @@
 ;; must not edit attributes governed by a declaration.
 (defun %note-attlist-declaration (text start context)
   (let ((keyword-end (+ start 9)))
-    (when (and (< keyword-end (length text))
-               (string= "<!ATTLIST" text :start2 start :end2 keyword-end)
+    (when (and (%text-starts-with-p text start "<!ATTLIST")
+               (< keyword-end (length text))
                (xml-space-char-p (char text keyword-end)))
-      (let* ((name-start (%skip-xml-space text keyword-end))
-             (name-end name-start))
+      (let ((name-start (%skip-xml-space text keyword-end)))
         (when (and (< name-start (length text))
                    (xml-name-start-char-p (char text name-start)))
-          (loop while (and (< name-end (length text))
-                           (xml-name-char-p (char text name-end)))
-                do (incf name-end))
-          (pushnew (subseq text name-start name-end)
+          (pushnew (subseq text name-start (%name-end text name-start))
                    (xml-entity-context-attlist-element-names context)
                    :test #'string=))))))
+
+(defun %entity-declaration-start-p (text index)
+  (and (%text-starts-with-p text index "<!ENTITY")
+       (let ((after (+ index 8)))
+         (or (= after (length text))
+             (xml-space-char-p (char text after))
+             (char= (char text after) #\%)))))
+
+(defun %process-parameter-entity-reference (text index context)
+  "Expand the parameter entity reference at INDEX and return the index after it."
+  (let* ((end (%entity-reference-end text (1+ index) context))
+         (declaration (%declared-entity context (subseq text (1+ index) end) t)))
+    (if (xml-entity-declaration-external-p declaration)
+        (%external-entity-result context declaration)
+        (progn
+          (%begin-entity-expansion context declaration)
+          (unwind-protect
+               (%process-internal-subset
+                (xml-entity-declaration-replacement-text declaration) context)
+            (%end-entity-expansion context))))
+    (1+ end)))
+
+(defun %process-internal-subset-item (text index context)
+  "Process the internal subset item at INDEX in TEXT and return the next index."
+  (cond
+    ((xml-space-char-p (char text index))
+     (1+ index))
+    ((%text-starts-with-p text index "<!--")
+     (%skip-comment text (+ index 4) context))
+    ((%entity-declaration-start-p text index)
+     (multiple-value-bind (declaration next)
+         (%parse-entity-declaration-at text (+ index 8) context)
+       (%declare-entity context declaration)
+       next))
+    ((char= (char text index) #\%)
+     (%process-parameter-entity-reference text index context))
+    ((%text-starts-with-p text index "<![")
+     (%entity-error context (xml-message :conditional-section-unsupported)
+                    :markup-declaration))
+    ((%text-starts-with-p text index "<!")
+     (%note-attlist-declaration text index context)
+     (%skip-markup-declaration text index context))
+    (t
+     (1+ index))))
+
+(defun %process-internal-subset (text context)
+  (let ((index 0))
+    (loop while (< index (length text))
+          do (setf index (%process-internal-subset-item text index context)))))
 
 (defun parse-xml-internal-subset (subset &key
                                          (resource-limits *default-xml-resource-limits*)
@@ -142,65 +213,5 @@
                   :resource-limits resource-limits
                   :external-entity-policy external-entity-policy
                   :source source :position position)))
-    (labels ((process (text)
-               (let ((length (length text))
-                     (index 0))
-                 (loop while (< index length)
-                       do (cond
-                            ((xml-space-char-p (char text index))
-                             (incf index))
-                            ((and (<= (+ index 4) length)
-                                  (string= "<!--" text :start1 0 :end1 4
-                                           :start2 index :end2 (+ index 4)))
-                             (setf index (%skip-comment text (+ index 4) context)))
-                            ((and (<= (+ index 8) length)
-                                  (string= "<!ENTITY" text :start1 0 :end1 8
-                                           :start2 index :end2 (+ index 8))
-                                  (or (= (+ index 8) length)
-                                      (xml-space-char-p (char text (+ index 8)))
-                                      (char= (char text (+ index 8)) #\%)))
-                             (multiple-value-bind (declaration next)
-                                 (%parse-entity-declaration-at text (+ index 8) context)
-                               (%declare-entity context declaration)
-                               (setf index next)))
-                            ((char= (char text index) #\%)
-                             (let* ((end (%entity-reference-end text (1+ index) context))
-                                    (name (subseq text (1+ index) end))
-                                    (declaration
-                                      (gethash name
-                                               (xml-entity-context-parameter-declarations
-                                                context))))
-                               (%check-entity-name-length context name)
-                               (unless declaration
-                                 (%entity-error
-                                  context
-                                  (xml-message :undeclared-parameter-entity name)
-                                  :entity-declared name))
-                               (if (xml-entity-declaration-external-p declaration)
-                                   (%external-entity-result context declaration)
-                                   (progn
-                                     (%begin-entity-expansion context declaration)
-                                     (unwind-protect
-                                          (process
-                                           (xml-entity-declaration-replacement-text
-                                            declaration))
-                                       (%end-entity-expansion context))))
-                               (setf index (1+ end))))
-                            ((and (<= (+ index 3) length)
-                                  (string= "<![" text :start2 index :end2 (+ index 3)))
-                             (%entity-error
-                              context
-                              (xml-message :conditional-section-unsupported)
-                              :markup-declaration))
-                            ((and (< (+ index 1) length)
-                                  (char= (char text index) #\<)
-                                  (char= (char text (1+ index)) #\!))
-                             (%note-attlist-declaration text index context)
-                             (setf index (%skip-markup-declaration text index context)))
-                            (t
-                             (incf index)))))))
-      (process subset))
+    (%process-internal-subset subset context)
     context))
-
-(defun %xml-parse-internal-subset (subset &rest arguments)
-  (apply #'parse-xml-internal-subset subset arguments))

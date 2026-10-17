@@ -104,6 +104,17 @@
         do (incf position)
         finally (return position)))
 
+(defun %name-end (text position)
+  (loop while (and (< position (length text))
+                   (xml-name-char-p (char text position)))
+        do (incf position)
+        finally (return position)))
+
+(defun %xml-name-string-p (text)
+  (and (plusp (length text))
+       (xml-name-start-char-p (char text 0))
+       (= (%name-end text 1) (length text))))
+
 (defun %entity-reference-end (text start context)
   (or (position #\; text :start start)
       (%entity-error context (xml-message :entity-reference-needs-semicolon)
@@ -146,30 +157,18 @@
         character))))
 
 (defun %validate-entity-value (text context)
-  (let ((position 0))
-    (loop while (< position (length text))
-          do (let ((marker (position #\& text :start position)))
-               (unless marker
-                 (return))
-               (let* ((end (%entity-reference-end text (1+ marker) context))
-                      (body (subseq text (1+ marker) end)))
-                 (if (and (> (length body) 0)
-                          (char= (char body 0) #\#))
-                     (%parse-character-reference body context)
-                     (progn
-                       (unless (and (> (length body) 0)
-                                    (xml-name-start-char-p (char body 0)))
-                         (%entity-error
-                          context
-                          (xml-message :entity-value-malformed-reference)
-                          :entity-reference))
-                       (loop for character across (subseq body 1)
-                             do (unless (xml-name-char-p character)
-                                  (%entity-error
-                                   context
-                                   (xml-message :entity-value-malformed-reference)
-                                   :entity-reference)))))
-                 (setf position (1+ end)))))))
+  (loop with position = 0
+        for marker = (position #\& text :start position)
+        while marker
+        do (let* ((end (%entity-reference-end text (1+ marker) context))
+                  (body (subseq text (1+ marker) end)))
+             (cond
+               ((and (plusp (length body)) (char= (char body 0) #\#))
+                (%parse-character-reference body context))
+               ((not (%xml-name-string-p body))
+                (%entity-error context (xml-message :entity-value-malformed-reference)
+                               :entity-reference)))
+             (setf position (1+ end)))))
 
 (defun %record-expanded-character (context character stream attribute-p
                                    &optional generated-p)
@@ -219,6 +218,22 @@
                 (xml-entity-context-limits context))))
     (when (> (length name) limit)
       (%entity-limit-error context :max-name-length (length name) limit))))
+
+(defun %declared-entity (context name parameter-p)
+  "Return the declaration of entity NAME, signalling when it is undeclared."
+  (%check-entity-name-length context name)
+  (or (gethash name (%entity-table context parameter-p))
+      (%entity-error context
+                     (if parameter-p
+                         (xml-message :undeclared-parameter-entity name)
+                         (xml-message :undeclared-entity name))
+                     :entity-declared name)))
+
+(defun %reference-character (body context)
+  "Return the character that reference BODY denotes, or NIL for a named entity."
+  (if (and (plusp (length body)) (char= (char body 0) #\#))
+      (%parse-character-reference body context)
+      (cdr (assoc body +xml-predefined-entities+ :test #'string=))))
 
 (defun %declare-entity (context declaration)
   (let* ((table (%entity-table context
