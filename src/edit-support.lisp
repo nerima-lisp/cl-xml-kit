@@ -13,7 +13,7 @@
                  :condition-initargs (:path path :reason :invalid-character)))))
 
 (defun %edit-refuse-namespace-declaration (path parsed)
-  (when (%span-namespace-declaration-p (parsed-path-attribute-name parsed))
+  (when (%namespace-declaration-name-p (parsed-path-attribute-name parsed))
     (xml-error 'xml-unsupported-edit :namespace-declaration-not-editable
                :condition-initargs (:path path :reason :namespace-declaration))))
 

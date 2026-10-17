@@ -165,6 +165,10 @@
     (list (cons "xml" (copy-seq +xml-namespace-uri+))))
    bindings :resource-limits resource-limits :position position))
 
+(defun %namespace-declaration-name-p (qname)
+  (or (string= qname "xmlns")
+      (and (>= (length qname) 6) (string= "xmlns:" qname :end2 6))))
+
 (defun %namespace-declaration-binding
     (lexical-name namespace-uri &key resource-limits position)
   "Return a binding for the namespace declaration attribute LEXICAL-NAME."
@@ -181,8 +185,7 @@
      (%namespace-validate-binding
       (%make-xml-namespace-binding nil (copy-seq namespace-uri))
       :position position))
-    ((and (>= (length lexical-name) 6)
-          (string= (subseq lexical-name 0 6) "xmlns:"))
+    ((%namespace-declaration-name-p lexical-name)
      (let ((prefix (subseq lexical-name 6)))
        (%string-value namespace-uri "NAMESPACE-URI")
        (unless (%namespace-ncname-p prefix)

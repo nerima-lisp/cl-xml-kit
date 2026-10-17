@@ -69,15 +69,11 @@
        (when (span-element-p node)
          (setf (span-scanner-root scanner) node))))))
 
-(defun %span-namespace-declaration-p (qname)
-  (or (string= qname "xmlns")
-      (and (>= (length qname) 6) (string= "xmlns:" qname :end2 6))))
-
 (defun %span-attribute (scanner name-token value-token space-start)
   (let ((qname (%xml-token-value name-token))
         (value-offset (xml-position-offset (xml-token-position value-token))))
     (%make-span-attribute qname
-                          (%span-namespace-declaration-p qname)
+                          (%namespace-declaration-name-p qname)
                           (%span-original scanner space-start)
                           (%span-token-start scanner name-token)
                           (%span-token-end scanner name-token)
