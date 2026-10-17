@@ -71,9 +71,7 @@
 
 (defun %edit-line-break-before-p (source attribute)
   "Return true when the whitespace before ATTRIBUTE contains a line break."
-  (find-if (lambda (character)
-             (or (char= character #\Return) (char= character #\Linefeed)))
-           source
+  (find-if #'%line-break-char-p source
            :start (span-attribute-space-start attribute)
            :end (span-attribute-name-start attribute)))
 

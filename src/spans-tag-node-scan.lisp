@@ -2,6 +2,10 @@
 
 (in-package #:cl-xml-kit)
 
+(declaim (inline %line-break-char-p))
+(defun %line-break-char-p (character)
+  (or (char= character #\Return) (char= character #\Linefeed)))
+
 (defun %span-fail (token message)
   (error 'xml-well-formedness-error
          :message message :position (xml-token-position token)))

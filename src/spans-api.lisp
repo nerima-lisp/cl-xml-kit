@@ -20,10 +20,7 @@ Return NIL when no CRLF pair collapsed, so the map is the SHIFT alone."
       offsets)))
 
 (defun %span-line-break (source)
-  (let ((index (position-if (lambda (character)
-                              (or (char= character #\Return)
-                                  (char= character #\Linefeed)))
-                            source)))
+  (let ((index (position-if #'%line-break-char-p source)))
     (cond
       ((or (null index) (char= (char source index) #\Linefeed)) :lf)
       ((and (< (1+ index) (length source))

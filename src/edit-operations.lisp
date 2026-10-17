@@ -144,10 +144,7 @@ For a run of several line breaks, only the last line break and what follows it."
   (let ((found nil))
     (loop for (previous child) on (span-element-children parent)
           do (when (and (span-element-p child) (%edit-plain-whitespace-p source previous))
-               (let ((break (position-if (lambda (character)
-                                           (or (char= character #\Return)
-                                               (char= character #\Linefeed)))
-                                         source
+               (let ((break (position-if #'%line-break-char-p source
                                          :start (span-node-start previous)
                                          :end (span-node-end previous)
                                          :from-end t)))
