@@ -33,12 +33,13 @@ The controls are deterministic and reject values below the release standard:
 | `BENCH_REVISION` | `unknown` | source revision recorded in the metadata |
 | `BENCH_SOURCE_STATE` | `unknown` | `clean`, `dirty`, or `unknown` |
 
-The harness starts no version-control command, so it records only the
-revision and working-tree state its caller passes. `nix run .#bench` sets both
-from the flake: a clean Git checkout gives its commit and `clean`, a modified
-one gives its commit and `dirty`, and a `path:` flake or a jj workspace gives
-`unknown` for both. For a manual run, set them yourself, for example
-`BENCH_REVISION="$(jj log --no-graph -r @- -T commit_id)"`.
+The harness records only the revision and working-tree state its caller
+passes. `nix run .#bench` sets both from the flake: a clean Git checkout gives
+its commit and `clean`, a modified one gives its commit and `dirty`, and a
+`path:` flake or a tree without `.git` gives `unknown` for both. For a manual
+run, set them yourself, for example
+`BENCH_REVISION="$(jj log --no-graph -r @- -T commit_id)" BENCH_SOURCE_STATE=clean`
+when the working-copy change `@` is empty.
 
 Workloads are `small`, `text-1mib`, `deep-512`, `attributes-128`,
 `namespaces`, and `mixed-content`. The seed is included in generated payloads
@@ -53,8 +54,8 @@ and MD5 digests of the benchmark sources.
 ## XMLConf
 
 The `xmlconf` flake check runs every selected case and compares the catalog
-counts and the passed, failed, and skipped totals with fixed values in
-`flake.nix`. To inspect a downloaded XMLConf tree directly:
+counts and the execution totals (passed, failed, and skipped cases) with fixed
+values in `flake.nix`. To inspect a downloaded XMLConf tree directly:
 
 ```sh
 XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
@@ -64,10 +65,10 @@ XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
 Without `--run`, the runner prints only the catalog counts. With `--run`, it
 also parses the selected valid, invalid, and not-wf cases, prints each outcome
 and the totals, and exits with status 1 when any case fails. `--report FILE`
-writes the output to FILE. Each case is read as octets, so UTF-8 and UTF-16
-documents take the same input path as `parse-xml`. The runner skips cases
-outside this implementation profile, including external DTD/entity
-resolution, XML 1.1, and DTD validation declarations. Namespace
+writes the output to FILE instead of standard output. Each case is passed to
+`parse-xml` as octets, so the parser detects UTF-8 and UTF-16 itself. The
+runner skips cases outside this implementation profile, including external
+DTD/entity resolution, XML 1.1, and DTD validation declarations. Namespace
 well-formedness errors remain fatal for the namespace-aware parser. A case
 that runs longer than `XML_KIT_XMLCONF_CASE_TIMEOUT` seconds (default 10) is
 reported as failed. An unknown option is a usage error (exit status 2);
