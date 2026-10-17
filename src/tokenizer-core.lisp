@@ -92,10 +92,6 @@ cursor, so repeated calls consume the input in order."
   "Return the tokenizer's source name, or NIL."
   (and (%xml-tokenizer-source tokenizer) (copy-seq (%xml-tokenizer-source tokenizer))))
 
-(defun xml-tokenizer-limits (tokenizer)
-  "Return the tokenizer's immutable resource limits."
-  (%xml-tokenizer-limits tokenizer))
-
 (defun %xml-tokenizer-current-position (tokenizer)
   (let ((state (%xml-tokenizer-state tokenizer)))
     (make-xml-position :source (%xml-tokenizer-source tokenizer)

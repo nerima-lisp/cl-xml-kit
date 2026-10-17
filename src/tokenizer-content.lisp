@@ -118,10 +118,6 @@
         (cond
           ((%xml-tokenizer-starts-with-p tokenizer "-->")
            (let ((end (%xml-tokenizer-state-index state)))
-             (when (and (> end start) (char= (char input (1- end)) #\-))
-               (%xml-tokenizer-fail tokenizer
-                                    (xml-message :comment-ends-with-hyphen)
-                                    :constraint :comment))
              (%xml-tokenizer-consume-literal tokenizer "-->")
              (setf (%xml-tokenizer-state-mode state) :content)
              (return (%xml-tokenizer-token tokenizer :comment

@@ -49,7 +49,7 @@
       (xml-message :public-needs-system-literal)))
     (t index)))
 
-(defun %xml-tokenizer-doctype-subset-end (tokenizer body index)
+(defun %xml-tokenizer-doctype-subset-end (body index)
   "Return the index after an internal subset that starts at INDEX, or INDEX when absent.
 
 Brackets inside quoted literals do not count toward the subset nesting."
@@ -66,9 +66,6 @@ Brackets inside quoted literals do not count toward the subset nesting."
                      ((char= character #\[) (incf depth))
                      ((char= character #\]) (decf depth)))
                    (incf index)))
-        (when (plusp depth)
-          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-internal-subset)
-                               :constraint :doctype))
         index)
       index))
 
@@ -77,8 +74,7 @@ Brackets inside quoted literals do not count toward the subset nesting."
                  tokenizer body (%doctype-skip-space body 0)))
          (index (%xml-tokenizer-doctype-external-id
                  tokenizer body (%doctype-skip-space body index)))
-         (index (%xml-tokenizer-doctype-subset-end
-                 tokenizer body (%doctype-skip-space body index))))
+         (index (%xml-tokenizer-doctype-subset-end body (%doctype-skip-space body index))))
     (unless (= (%doctype-skip-space body index) (length body))
       (%xml-tokenizer-fail tokenizer (xml-message :unexpected-doctype-content)
                            :constraint :doctype))))

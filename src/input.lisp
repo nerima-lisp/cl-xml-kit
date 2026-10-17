@@ -164,8 +164,7 @@ order a BOM selected."
      (cl-codec-kit:invalid-leading-byte-octet condition))
     ((typep condition 'cl-codec-kit:invalid-continuation-byte)
      (cl-codec-kit:invalid-continuation-byte-octet condition))
-    ((and (integerp position) (<= 0 position) (< position (length octets)))
-     (aref octets position))))
+    (t (aref octets position))))
 
 (defun %signal-decode-error (condition octets start encoding source)
   (let* ((octet-position (cl-codec-kit:decode-error-position condition))
