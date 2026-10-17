@@ -199,6 +199,13 @@
     (%serializer-write state ":" object path))
   (%serializer-write state local-name object path))
 
+(defun %write-attribute (state local-name prefix attribute path)
+  "Write ATTRIBUTE as its name, from LOCAL-NAME and PREFIX, an equals sign, and its quoted value."
+  (%write-name state local-name prefix attribute path)
+  (%serializer-write state "=\"" attribute path)
+  (%write-escaped-attribute state (xml-attribute-value attribute) attribute path)
+  (%serializer-write state "\"" attribute path))
+
 (declaim (ftype function %write-node))
 
 (defun xml-node-p (object)
