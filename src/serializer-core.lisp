@@ -71,7 +71,7 @@
                     (write-string "&#9;" output))
                    ((and canonical (char= character #\Newline))
                     (write-string "&#10;" output))
-                   ((and canonical (char= character #\Return))
+                   ((char= character #\Return)
                     (write-string "&#13;" output))
                    (t (write-char character output)))))))
 

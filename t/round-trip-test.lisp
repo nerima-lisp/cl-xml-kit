@@ -197,3 +197,33 @@
              (first (xml-element-attributes
                      (first (xml-document-children (parse-xml serialized))))))
             :to-equal "a<b&c")))
+
+(defun round-trip-whitespace-strings ()
+  "Return every string of one to three characters over a, space, tab, line feed, and carriage return."
+  (let ((alphabet (list #\a #\Space #\Tab #\Newline #\Return))
+        (strings (list "")))
+    (loop repeat 3
+          do (setf strings
+                   (loop for prefix in strings
+                         nconc (loop for character in alphabet
+                                     collect (concatenate 'string prefix
+                                                          (string character)))))
+          append strings)))
+
+(it "round-trips carriage returns, line feeds, and tabs in text and attribute values"
+  (expect
+   (loop for data in (round-trip-whitespace-strings)
+         for element = (make-xml-element
+                        :name (make-xml-name :local-name "root")
+                        :attributes (list (make-xml-attribute
+                                           :name (make-xml-name :local-name "value")
+                                           :value data))
+                        :children (list (make-xml-text :data data)))
+         for root = (first (xml-document-children (parse-xml (xml->string element))))
+         unless (and (equal (xml-attribute-value (first (xml-element-attributes root)))
+                            data)
+                     (equal (apply #'concatenate 'string
+                                   (mapcar #'xml-text-data (xml-element-children root)))
+                            data))
+           collect data)
+   :to-equal nil))

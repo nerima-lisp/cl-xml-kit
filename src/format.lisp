@@ -35,16 +35,15 @@ spaces per level, and STYLE the line break style, :CRLF, :LF, or :CR."
                  object))
 
 (defun %format-text (state string object)
-  "Write STRING as character data, with line feeds as line breaks and carriage returns as references."
+  "Write STRING as character data, with line feeds as line breaks."
   (let ((escaped (%escape-text string nil)))
     (%format-write
      state
      (with-output-to-string (stream)
        (loop for character across escaped
-             do (case character
-                  (#\Return (write-string "&#13;" stream))
-                  (#\Linefeed (write-string (%format-line-break state) stream))
-                  (t (write-char character stream)))))
+             do (if (char= character #\Linefeed)
+                    (write-string (%format-line-break state) stream)
+                    (write-char character stream))))
      object)))
 
 (defun %format-whitespace-text-p (node)
