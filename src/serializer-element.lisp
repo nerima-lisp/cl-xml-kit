@@ -89,11 +89,11 @@ for each attribute. A namespaced attribute without a prefix gets a generated one
       (dolist (child children)
         (when lines
           (%serializer-write state "\n" element path)
-          (%pretty-indent state (1+ level) element path))
+          (%pretty-indent state (1+ level)))
         (%write-node state child scope (1+ level) child-path))
       (when lines
         (%serializer-write state "\n" element path)
-        (%pretty-indent state level element path)))))
+        (%pretty-indent state level)))))
 
 (defun %write-element-content (state element children local-name prefix scope level path)
   "Close the start tag of ELEMENT, then write CHILDREN and the end tag unless it is empty."

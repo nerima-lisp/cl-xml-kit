@@ -27,8 +27,8 @@
                                 (xml-message :character-not-representable
                                              (char-code character)))))
 
-(defun %serializer-write (state string object path)
-  (%check-xml-characters string object path)
+(defun %serializer-emit (state string)
+  "Write STRING, whose characters are known to be XML characters, within the output limit."
   (let* ((old-count (xml-serializer-state-output-count state))
          (new-count (+ old-count (length string)))
          (limit (xml-resource-limits-max-output-characters
@@ -40,41 +40,56 @@
     (write-string string (xml-serializer-state-stream state))
     (setf (xml-serializer-state-output-count state) new-count)))
 
+(defun %serializer-write (state string object path)
+  (%check-xml-characters string object path)
+  (%serializer-emit state string))
+
+(defun %markup-character-p (character)
+  "Return true when CHARACTER is one that some text or attribute context escapes."
+  (case character
+    ((#\& #\< #\> #\" #\Tab #\Newline #\Return) t)))
+
 (defun %escape-text (string canonical)
-  (with-output-to-string (output)
-    (loop for index from 0 below (length string)
-          for character = (char string index)
-          do (cond
-               ((char= character #\&) (write-string "&amp;" output))
-               ((char= character #\<) (write-string "&lt;" output))
-               ((and (char= character #\>)
-                     (or canonical
-                         (and (>= index 2)
-                              (char= (char string (1- index)) #\])
-                              (char= (char string (- index 2)) #\]))))
-                (write-string "&gt;" output))
-               ((and canonical (char= character #\"))
-                (write-string "&quot;" output))
-               ((and canonical (char= character #\Tab))
-                (write-string "&#9;" output))
-               ((and canonical (char= character #\Newline))
-                (write-string "&#10;" output))
-               ((and canonical (char= character #\Return))
-                (write-string "&#13;" output))
-               (t (write-char character output))))))
+  "Return STRING escaped as character data, or STRING itself when nothing needs escaping."
+  (if (notany #'%markup-character-p string)
+      string
+      (with-output-to-string (output)
+        (loop for index from 0 below (length string)
+              for character = (char string index)
+              do (cond
+                   ((char= character #\&) (write-string "&amp;" output))
+                   ((char= character #\<) (write-string "&lt;" output))
+                   ((and (char= character #\>)
+                         (or canonical
+                             (and (>= index 2)
+                                  (char= (char string (1- index)) #\])
+                                  (char= (char string (- index 2)) #\]))))
+                    (write-string "&gt;" output))
+                   ((and canonical (char= character #\"))
+                    (write-string "&quot;" output))
+                   ((and canonical (char= character #\Tab))
+                    (write-string "&#9;" output))
+                   ((and canonical (char= character #\Newline))
+                    (write-string "&#10;" output))
+                   ((and canonical (char= character #\Return))
+                    (write-string "&#13;" output))
+                   (t (write-char character output)))))))
 
 (defun %escape-attribute (string)
-  (with-output-to-string (output)
-    (loop for character across string
-          do (case character
-               (#\& (write-string "&amp;" output))
-               (#\< (write-string "&lt;" output))
-               (#\> (write-string "&gt;" output))
-               (#\" (write-string "&quot;" output))
-               (#\Tab (write-string "&#9;" output))
-               (#\Newline (write-string "&#10;" output))
-               (#\Return (write-string "&#13;" output))
-               (otherwise (write-char character output))))))
+  "Return STRING escaped as a double-quoted attribute value, or STRING itself when nothing needs escaping."
+  (if (notany #'%markup-character-p string)
+      string
+      (with-output-to-string (output)
+        (loop for character across string
+              do (case character
+                   (#\& (write-string "&amp;" output))
+                   (#\< (write-string "&lt;" output))
+                   (#\> (write-string "&gt;" output))
+                   (#\" (write-string "&quot;" output))
+                   (#\Tab (write-string "&#9;" output))
+                   (#\Newline (write-string "&#10;" output))
+                   (#\Return (write-string "&#13;" output))
+                   (otherwise (write-char character output)))))))
 
 (defun %binding (prefix bindings)
   (assoc prefix bindings :test #'equal))
@@ -132,11 +147,9 @@
                   (%binding prefix bindings))
         (return prefix))))))
 
-(defun %pretty-indent (state level object path)
-  (%serializer-write state
-                     (make-string (* level (xml-serializer-state-indent state))
-                                  :initial-element #\Space)
-                     object path))
+(defun %pretty-indent (state level)
+  (%serializer-emit state (make-string (* level (xml-serializer-state-indent state))
+                                       :initial-element #\Space)))
 
 (defun %element-only-children-p (children)
   (and children (every #'xml-element-p children)))
@@ -159,12 +172,11 @@
 
 (defun %write-escaped-text (state string object path)
   (%check-xml-characters string object path)
-  (let ((escaped (%escape-text string (xml-serializer-state-canonical state))))
-    (%serializer-write state escaped object path)))
+  (%serializer-emit state (%escape-text string (xml-serializer-state-canonical state))))
 
 (defun %write-escaped-attribute (state string object path)
   (%check-xml-characters string object path)
-  (%serializer-write state (%escape-attribute string) object path))
+  (%serializer-emit state (%escape-attribute string)))
 
 (defun %required-binding (prefix uri scope declarations object path)
   (when (and prefix (string= prefix "xml"))
