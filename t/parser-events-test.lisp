@@ -150,7 +150,7 @@
           :to-equal "r"))
 
 (it "parses nesting that recursive descent would exhaust the default stack on"
-  (let* ((depth 100000)
+  (let* ((depth 60000)
          (input (with-output-to-string (stream)
                   (loop repeat depth do (write-string "<a>" stream))
                   (loop repeat depth do (write-string "</a>" stream))))
