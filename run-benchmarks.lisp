@@ -2,7 +2,9 @@
 
 (require :asdf)
 
-(asdf:load-asd (merge-pathnames "cl-xml-kit.asd" *load-truename*))
+(load (merge-pathnames "scripts/script-support.lisp" *load-truename*))
+
+(cl-xml-kit/script-support:load-project-definition)
 
 (asdf:load-system "cl-xml-kit/benchmark")
 

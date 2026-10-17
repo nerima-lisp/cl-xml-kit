@@ -1,4 +1,5 @@
-;;;; Definitions shared by the scripts in this directory and run-benchmarks.lisp.
+;;;; Definitions shared by the scripts in this directory, run-tests.lisp, and
+;;;; run-benchmarks.lisp.
 ;;;; Loading this file defines functions only.
 
 (require :asdf)
@@ -8,6 +9,7 @@
   (:export #:script-path
            #:repository-root
            #:load-project-definition
+           #:register-repository
            #:call-run-tests
            #:positive-integer-setting
            #:process-output-within
@@ -36,6 +38,12 @@
 
 (defun load-project-definition ()
   (asdf:load-asd (merge-pathnames "cl-xml-kit.asd" (repository-root))))
+
+(defun register-repository ()
+  "Make ASDF find this repository's systems first and every other system
+through the caller's ASDF configuration."
+  (asdf:initialize-source-registry
+   `(:source-registry (:tree ,(repository-root)) :inherit-configuration)))
 
 (defun call-run-tests ()
   (let* ((package (find-package "CL-XML-KIT/TEST"))

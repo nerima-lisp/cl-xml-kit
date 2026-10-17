@@ -5,21 +5,9 @@
 
 (require :asdf)
 
-(defun script-directory ()
-  (make-pathname :name nil
-                 :type nil
-                 :defaults (or *load-truename*
-                               *compile-file-truename*
-                               (error "Unable to determine the script location"))))
+(load (merge-pathnames "scripts/script-support.lisp" *load-truename*))
 
-(defun configure-local-source-registry (root)
-  (asdf:initialize-source-registry
-   `(:source-registry
-     (:tree ,root)
-     :inherit-configuration)))
+(cl-xml-kit/script-support:register-repository)
 
-(let ((root (script-directory)))
-  (configure-local-source-registry root)
-  (asdf:test-system "cl-xml-kit")
-  (uiop:quit 0))
+(asdf:test-system "cl-xml-kit")
 
