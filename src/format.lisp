@@ -66,15 +66,13 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
       ((string= (xml-attribute-value attribute) "default") nil)
       (t preserve))))
 
+(defun %format-block-node-p (node)
+  (or (xml-element-p node) (xml-comment-p node) (xml-processing-instruction-p node)))
+
 (defun %format-block-children (children)
   "Return CHILDREN without whitespace-only text when what is left is only elements, comments, and processing instructions, at least one; else NIL."
   (let ((kept (remove-if #'%format-whitespace-text-p children)))
-    (and kept
-         (every (lambda (child)
-                  (or (xml-element-p child) (xml-comment-p child)
-                      (xml-processing-instruction-p child)))
-                kept)
-         kept)))
+    (and kept (every #'%format-block-node-p kept) kept)))
 
 (declaim (ftype function %format-node))
 
@@ -94,11 +92,8 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
     (dolist (attribute (xml-element-attributes element))
       (let ((attribute-name (xml-attribute-name attribute)))
         (%format-write state " " attribute)
-        (%write-name serializer (xml-name-local-name attribute-name)
-                     (xml-name-prefix attribute-name) attribute nil)
-        (%format-write state "=\"" attribute)
-        (%write-escaped-attribute serializer (xml-attribute-value attribute) attribute nil)
-        (%format-write state "\"" attribute)))
+        (%write-attribute serializer (xml-name-local-name attribute-name)
+                          (xml-name-prefix attribute-name) attribute nil)))
     (cond
       ((null children)
        (%format-write state "/>" element))
@@ -124,17 +119,13 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
       (xml-element (%format-element state node level preserve literal))
       (xml-text (%format-text state (xml-text-data node) node))
       (xml-comment
-       (%write-node serializer
-                    (make-xml-comment
-                     :data (%edit-convert-line-breaks (xml-comment-data node) style))
-                    nil 0 nil))
+       (%write-comment serializer (%edit-convert-line-breaks (xml-comment-data node) style)
+                       node nil))
       (xml-processing-instruction
-       (%write-node serializer
-                    (make-xml-processing-instruction
-                     :target (xml-processing-instruction-target node)
-                     :data (let ((data (xml-processing-instruction-data node)))
-                             (and data (%edit-convert-line-breaks data style))))
-                    nil 0 nil)))))
+       (let ((data (xml-processing-instruction-data node)))
+         (%write-processing-instruction serializer (xml-processing-instruction-target node)
+                                        (and data (%edit-convert-line-breaks data style))
+                                        node nil))))))
 
 (defun %format-document (context indent)
   "Return the formatted text of the document that CONTEXT holds."
@@ -174,17 +165,12 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
 (defun %format-children-signature (children preserve document-p)
   "Return the signatures of CHILDREN, without the whitespace-only text that the layout treats as insignificant."
   (let* ((merged (%dom-normalize-children children nil))
-         (kept (remove-if #'%format-whitespace-text-p merged)))
+         (lines (and (not preserve) (%format-block-children merged))))
     (mapcar (lambda (child) (%format-signature child preserve))
-            (if (or document-p
-                    (and (not preserve)
-                         kept
-                         (every (lambda (child)
-                                  (or (xml-element-p child) (xml-comment-p child)
-                                      (xml-processing-instruction-p child)))
-                                kept)))
-                kept
-                merged))))
+            (cond
+              (lines)
+              (document-p (remove-if #'%format-whitespace-text-p merged))
+              (t merged)))))
 
 (defun %format-signature (node &optional preserve)
   "Return a value that is EQUAL for nodes that differ only in layout whitespace."
