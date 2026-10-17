@@ -3,8 +3,8 @@
 ;;;; Lexical span scanner for tools that edit XML without rewriting it. DOM
 ;;;; positions cannot serve: attributes and end tags have none, end positions
 ;;;; are not exclusive, and offsets count characters of the line-end-normalized
-;;;; text. This scanner drives the tokenizer over that text and records where
-;;;; each construct lies in the caller's original string.
+;;;; text. This scanner observes the tokens the parser reads from that text and
+;;;; records where each construct lies in the caller's original string.
 
 (in-package #:cl-xml-kit)
 
@@ -153,24 +153,25 @@ that appear in ATTLIST declarations of the internal subset."
   (run nil))
 
 (defstruct (span-scanner
-            (:constructor %make-span-scanner
-                (tokenizer text offsets shift limits external-entity-policy))
+            (:constructor %make-span-scanner (text offsets shift))
             (:copier nil))
-  "Mutable state for one scan.
+  "Mutable state of the span builder that observes one parse.
 
 TEXT is the normalized text. OFFSETS maps each normalized index, and the text
 length, to an index in the original string; it is NIL when the two differ only
-by the SHIFT of a skipped leading U+FEFF."
-  (tokenizer nil :read-only t)
+by the SHIFT of a skipped leading U+FEFF. OPEN-TOKEN is the `<` or `</` token of
+the tag being read, NAME-TOKEN its name, and ATTRIBUTE-NAME, ATTRIBUTES, and
+SPACE-START the start-tag state; all are NIL between tags."
   (text "" :read-only t)
   (offsets nil :read-only t)
   (shift 0 :read-only t)
-  (limits nil :read-only t)
-  (external-entity-policy :reject :read-only t)
+  (open-token nil)
+  (name-token nil)
+  (attribute-name nil)
+  (attributes nil)
+  (space-start nil)
   (stack nil)
   (nodes nil)
   (declaration nil)
   (doctype nil)
-  (root nil)
-  (attlist-element-names nil)
-  (markup-entity-names nil))
+  (root nil))

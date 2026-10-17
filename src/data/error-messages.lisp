@@ -202,9 +202,7 @@
       (:root-doctype-mismatch "The document root does not match DOCTYPE.")
       (:end-tag-without-element "An end tag has no open element.")
       (:root-required "A document needs a root element.")
-      (:document-ended-in-element "The document ended in an element.")
       (:parser-fatal "The parser is in a fatal state.")
-      (:unexpected-token-outside-root "Unexpected token outside the root element.")
       ;; Serializer
       (:character-not-representable "Character U+~4,'0X cannot be represented in XML.")
       (:output-limit-exceeded "The serialized output exceeds the configured limit.")

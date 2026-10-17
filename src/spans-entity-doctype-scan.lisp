@@ -73,17 +73,6 @@ a qualifying entity."
                     (%span-original scanner (+ body-start subset-start)))
                (and subset
                     (%span-original scanner (+ body-start subset-end)))))
-        (when subset
-          (let ((context (parse-xml-internal-subset
-                          subset
-                          :resource-limits (span-scanner-limits scanner)
-                          :external-entity-policy
-                          (span-scanner-external-entity-policy scanner)
-                          :position (xml-token-position token))))
-            (setf (span-scanner-attlist-element-names scanner)
-                  (xml-entity-context-attlist-element-names context)
-                  (span-scanner-markup-entity-names scanner)
-                  (%span-markup-entity-names context))))
         (%span-add-node scanner (span-scanner-doctype scanner))))))
 
 (defun %span-scan-content (scanner token)
@@ -99,15 +88,13 @@ a qualifying entity."
                      (%make-span-processing-instruction
                       (%span-token-start scanner token)
                       (%span-token-end scanner token))))
-    (:start-tag-open (%span-scan-start-tag scanner token))
-    (:end-tag-open (%span-scan-end-tag scanner token))
-    (otherwise (%span-fail token (xml-message :unexpected-token-in-content)))))
+    ((:start-tag-open :end-tag-open)
+     (setf (span-scanner-open-token scanner) token))))
 
 (defun %span-scan-top-level (scanner token)
+  ;; Text, references, and EOF are not recorded; the parser rejects any token
+  ;; out of place before the document ends.
   (case (xml-token-kind token)
-    ;; Whitespace is not recorded. PARSE-XML also accepts a reference after an
-    ;; empty root element, which the DOM keeps as document-level text.
-    ((:text :entity-reference))
     (:comment
      (%span-add-node scanner
                      (%make-span-comment (%span-token-start scanner token)
@@ -122,14 +109,17 @@ a qualifying entity."
        ((zerop (xml-position-offset (xml-token-position token)))
         (setf (span-scanner-declaration scanner)
               (%make-span-node (%span-token-start scanner token)
-                               (%span-token-end scanner token))))
-       (t (%span-fail token (xml-message :declaration-not-first)))))
-    (:doctype
-     (when (span-scanner-doctype scanner)
-       (%span-fail token (xml-message :single-doctype)))
-     (%span-scan-doctype scanner token))
-    (:start-tag-open
-     (when (span-scanner-root scanner)
-       (%span-fail token (xml-message :single-root)))
-     (%span-scan-start-tag scanner token))
-    (otherwise (%span-fail token (xml-message :unexpected-token-outside-root)))))
+                               (%span-token-end scanner token))))))
+    (:doctype (%span-scan-doctype scanner token))
+    (:start-tag-open (setf (span-scanner-open-token scanner) token))))
+
+(defun %span-observe (scanner token)
+  "Record TOKEN, which the parser has just read from the document, in SCANNER."
+  (let ((open (span-scanner-open-token scanner)))
+    (cond
+      ((null open)
+       (if (span-scanner-stack scanner)
+           (%span-scan-content scanner token)
+           (%span-scan-top-level scanner token)))
+      ((eq (xml-token-kind open) :start-tag-open) (%span-start-tag-token scanner token))
+      (t (%span-end-tag-token scanner token)))))

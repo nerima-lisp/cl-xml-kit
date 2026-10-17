@@ -28,42 +28,56 @@ Return NIL when no CRLF pair collapsed, so the map is the SHIFT alone."
        :crlf)
       (t :cr))))
 
-(defun scan-xml-spans (source &key
-                                (resource-limits *default-xml-resource-limits*)
-                                (external-entity-policy :reject))
-  "Return the SPAN-DOCUMENT of the well-formed XML string SOURCE.
+(defun %strip-bom (string)
+  (if (and (plusp (length string)) (char= (char string 0) (code-char #xFEFF)))
+      (subseq string 1)
+      string))
 
-Spans index SOURCE itself. A leading U+FEFF is skipped and every CRLF or CR is
-read as the single line feed the parser sees. The scanner relies on PARSE-XML,
-run with the same options, for well-formedness."
-  (check-argument source stringp xml-input-error :label-must-be-string
-                  :format-arguments ("XML span SOURCE"))
-  (let* ((shift (if (and (plusp (length source))
-                         (char= (char source 0) (code-char #xFEFF)))
-                    1
-                    0))
-         (text (xml-input-text
-                (make-xml-input (if (plusp shift) (subseq source shift) source)
-                                :limits resource-limits)))
-         (scanner (%make-span-scanner
-                   (make-xml-tokenizer text :limits resource-limits)
-                   text (%span-offsets source text shift) shift
-                   resource-limits external-entity-policy))
-         (eof (loop for token = (%span-next-token scanner)
-                    until (eq (xml-token-kind token) :eof)
-                    do (if (span-scanner-stack scanner)
-                           (%span-scan-content scanner token)
-                           (%span-scan-top-level scanner token))
-                    finally (return token))))
-    (when (span-scanner-stack scanner)
-      (%span-fail eof (xml-message :document-ended-in-element)))
-    (unless (span-scanner-root scanner)
-      (%span-fail eof (xml-message :root-required)))
+(defun %source-parser (source resource-limits external-entity-policy)
+  "Return a parser over SOURCE and the span scanner that observes its tokens.
+
+The parser reads SOURCE without a leading U+FEFF, which it would otherwise
+reject; the spans index SOURCE as given."
+  (let* ((stripped (%strip-bom source))
+         (shift (- (length source) (length stripped)))
+         (parser (make-xml-parser stripped
+                                  :resource-limits resource-limits
+                                  :external-entity-policy external-entity-policy))
+         (text (xml-parser-input parser))
+         (scanner (%make-span-scanner text (%span-offsets source text shift) shift)))
+    (setf (xml-parser-token-observer parser)
+          (lambda (token) (%span-observe scanner token)))
+    (values parser scanner)))
+
+(defun %span-document (scanner parser source)
+  "Return the SPAN-DOCUMENT that SCANNER recorded while PARSER read SOURCE to its end.
+
+The internal subset, when there is one, is read from the entity context PARSER
+built from it."
+  (let* ((doctype (span-scanner-doctype scanner))
+         (context (and doctype (span-doctype-internal-subset doctype)
+                       (xml-parser-entities parser))))
     (%make-span-document
      :declaration (span-scanner-declaration scanner)
-     :doctype (span-scanner-doctype scanner)
+     :doctype doctype
      :children (nreverse (span-scanner-nodes scanner))
      :root (span-scanner-root scanner)
      :line-break (%span-line-break source)
-     :markup-entity-names (span-scanner-markup-entity-names scanner)
-     :attlist-element-names (span-scanner-attlist-element-names scanner))))
+     :markup-entity-names (and context (%span-markup-entity-names context))
+     :attlist-element-names (and context
+                                 (xml-entity-context-attlist-element-names context)))))
+
+(defun scan-xml-spans (source &key
+                                (resource-limits *default-xml-resource-limits*)
+                                (external-entity-policy :reject))
+  "Return the SPAN-DOCUMENT of the XML string SOURCE.
+
+Spans index SOURCE itself. A leading U+FEFF is skipped and every CRLF or CR is
+read as the single line feed the parser sees. The spans come from the tokens of
+one parse, run with these options, which also checks well-formedness."
+  (check-argument source stringp xml-input-error :label-must-be-string
+                  :format-arguments ("XML span SOURCE"))
+  (multiple-value-bind (parser scanner)
+      (%source-parser source resource-limits external-entity-policy)
+    (%parser-resume parser #'%continue-event)
+    (%span-document scanner parser source)))

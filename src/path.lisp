@@ -180,26 +180,17 @@ NIL, then the index after the segment. The first segment is always a step."
              (%path-syntax-error path end "the end of the path"))
            (return (%make-parsed-path (nreverse steps) kind value))))))))
 
-(defun %strip-bom (string)
-  (if (and (plusp (length string)) (char= (char string 0) (code-char #xFEFF)))
-      (subseq string 1)
-      string))
-
 (defun %path-context (source path &key resource-limits external-entity-policy)
   "Parse and scan SOURCE for resolving PATH.
 
-The DOM comes from PARSE-XML on SOURCE without a leading U+FEFF, which the parser
-would otherwise reject; the span tree indexes SOURCE as given."
+One parse feeds both the DOM and the span tree."
   (check-argument source stringp xml-input-error :label-must-be-string
                   :format-arguments ("SOURCE"))
-  (let ((dom (parse-xml (%strip-bom source)
-                        :resource-limits resource-limits
-                        :external-entity-policy external-entity-policy)))
-    (%make-path-context source path dom
-                        (scan-xml-spans source
-                                        :resource-limits resource-limits
-                                        :external-entity-policy external-entity-policy)
-                        resource-limits external-entity-policy)))
+  (multiple-value-bind (parser scanner)
+      (%source-parser source resource-limits external-entity-policy)
+    (let ((dom (%parser-document parser)))
+      (%make-path-context source path dom (%span-document scanner parser source)
+                          resource-limits external-entity-policy))))
 
 (defun %path-name-matches-p (step qname)
   (or (eq (path-step-name step) :any)

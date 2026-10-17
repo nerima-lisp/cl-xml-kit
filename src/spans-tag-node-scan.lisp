@@ -3,12 +3,9 @@
 (in-package #:cl-xml-kit)
 
 (declaim (inline %line-break-char-p))
+
 (defun %line-break-char-p (character)
   (or (char= character #\Return) (char= character #\Linefeed)))
-
-(defun %span-fail (token message)
-  (error 'xml-well-formedness-error
-         :message message :position (xml-token-position token)))
 
 (defun %span-original (scanner index)
   (let ((offsets (span-scanner-offsets scanner)))
@@ -21,9 +18,6 @@
 
 (defun %span-token-end (scanner token)
   (%span-original scanner (xml-token-end token)))
-
-(defun %span-next-token (scanner)
-  (next-xml-token (span-scanner-tokenizer scanner)))
 
 (defun %span-flush-run (scanner frame)
   (let ((run (span-frame-run frame)))
@@ -97,30 +91,35 @@
         (push (%make-span-frame qname start name-end attributes start-tag-end)
               (span-scanner-stack scanner)))))
 
-(defun %span-scan-start-tag (scanner open-token)
-  (let* ((name-token (%span-next-token scanner))
-         (space-start (xml-token-end name-token))
-         (attribute-name nil)
-         (attributes nil))
-    (loop for token = (%span-next-token scanner)
-          do (ecase (xml-token-kind token)
-               (:name (setf attribute-name token))
-               (:equals)
-               (:quoted-value
-                (push (%span-attribute scanner attribute-name token space-start)
-                      attributes)
-                (setf space-start (xml-token-end token)))
-               ((:tag-close :empty-element-close)
-                (return (%span-open-element scanner open-token name-token
-                                            (nreverse attributes) token)))))))
+(defun %span-leave-tag (scanner)
+  "Return SCANNER to reading between tags."
+  (setf (span-scanner-open-token scanner) nil
+        (span-scanner-name-token scanner) nil
+        (span-scanner-attribute-name scanner) nil
+        (span-scanner-attributes scanner) nil
+        (span-scanner-space-start scanner) nil))
 
-(defun %span-scan-end-tag (scanner open-token)
-  (let* ((name-token (%span-next-token scanner))
-         (close-token (%span-next-token scanner))
-         (frame (pop (span-scanner-stack scanner))))
-    (unless (and frame
-                 (string= (%xml-token-value name-token) (span-frame-qname frame)))
-      (%span-fail name-token (xml-message :end-tag-mismatch)))
+(defun %span-start-tag-token (scanner token)
+  "Take TOKEN, read inside the start tag that SCANNER has open."
+  (case (xml-token-kind token)
+    (:name
+     (if (span-scanner-name-token scanner)
+         (setf (span-scanner-attribute-name scanner) token)
+         (setf (span-scanner-name-token scanner) token
+               (span-scanner-space-start scanner) (xml-token-end token))))
+    (:quoted-value
+     (push (%span-attribute scanner (span-scanner-attribute-name scanner) token
+                            (span-scanner-space-start scanner))
+           (span-scanner-attributes scanner))
+     (setf (span-scanner-space-start scanner) (xml-token-end token)))
+    ((:tag-close :empty-element-close)
+     (%span-open-element scanner (span-scanner-open-token scanner)
+                         (span-scanner-name-token scanner)
+                         (nreverse (span-scanner-attributes scanner)) token)
+     (%span-leave-tag scanner))))
+
+(defun %span-close-element (scanner open-token close-token)
+  (let ((frame (pop (span-scanner-stack scanner))))
     (%span-flush-run scanner frame)
     (let ((end-tag-start (%span-token-start scanner open-token))
           (end (%span-token-end scanner close-token)))
@@ -136,3 +135,11 @@
                        :content-end end-tag-start
                        :end-tag-start end-tag-start :end-tag-end end
                        :children (nreverse (span-frame-children frame)))))))
+
+(defun %span-end-tag-token (scanner token)
+  "Take TOKEN, read inside the end tag that SCANNER has open."
+  (case (xml-token-kind token)
+    (:name (setf (span-scanner-name-token scanner) token))
+    (:tag-close
+     (%span-close-element scanner (span-scanner-open-token scanner) token)
+     (%span-leave-tag scanner))))
