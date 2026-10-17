@@ -4,16 +4,13 @@
   (require :asdf)
   (require :sb-cover))
 
+(load (merge-pathnames "script-support.lisp" *load-truename*))
+
 ;; SB-COVER only reports files compiled after this policy is established.
 (declaim (optimize (sb-cover:store-coverage-data 3)))
 
 ;; SB-COVER needs source-location metadata before instrumented compilation.
 (sb-cover:enable-coverage-logging)
-
-(defun coverage-script-directory ()
-  (make-pathname :name nil :type nil
-                 :defaults (or *load-truename* *compile-file-truename*
-                               (error "Unable to determine script location"))))
 
 (defun coverage-system-files (system-name)
   (let ((files nil)
@@ -37,31 +34,13 @@
         (error "Coverage ~A input is empty: ~A" label file))))
   files)
 
-(defun coverage-call-run-tests ()
-  (let* ((package (find-package "CL-XML-KIT/TEST"))
-         (symbol (and package (find-symbol "RUN-TESTS" package))))
-    (unless (and symbol (fboundp symbol))
-      (error "The loaded cl-xml-kit/test system does not define RUN-TESTS"))
-    (unless (funcall (symbol-function symbol))
-      (error "cl-xml-kit/test returned NIL"))))
-
-(defun coverage-run-xmlconf (root)
+(defun coverage-run-xmlconf ()
   (let ((directory (uiop:getenv "XML_KIT_XMLCONF_DIR")))
     (when directory
-      (let ((runner (merge-pathnames "scripts/xmlconf-runner.lisp" root)))
-        (unless (probe-file runner)
-          (error "XMLConf runner is missing: ~A" runner))
-        (load runner)
-        (let* ((package (find-package "CL-XML-KIT/XMLCONF"))
-               (symbol (and package (find-symbol "RUN-XMLCONF" package))))
-          (unless (and symbol (fboundp symbol))
-            (error "The loaded XMLConf runner does not define RUN-XMLCONF"))
-          (format t "coverage-xmlconf~Cdirectory~C~A~%" #\Tab #\Tab directory)
-          (funcall (symbol-function symbol)
-                   directory
-                   :exclusions-file
-                   (merge-pathnames "scripts/xmlconf-exclusions.sexp" root)
-                   :mode :execute))))))
+      (cl-xml-kit/script-support:load-xmlconf-modules)
+      (format t "coverage-xmlconf~Cdirectory~C~A~%" #\Tab #\Tab directory)
+      (uiop:symbol-call "CL-XML-KIT/XMLCONF" "RUN-XMLCONF" directory
+                        :mode :execute))))
 
 (defun coverage-number (line prefix)
   (when (and (>= (length line) (length prefix))
@@ -69,6 +48,11 @@
     (let ((end (or (position #\, line :start (length prefix))
                    (length line))))
       (parse-integer line :start (length prefix) :end end))))
+
+(defun coverage-record-count (line)
+  "Return the count after the comma of an LCOV DA or BA record, or NIL."
+  (let ((comma (position #\, line :start 3)))
+    (and comma (parse-integer line :start (1+ comma)))))
 
 (defun coverage-metrics (path source-files)
   (let ((source-paths (make-hash-table :test #'equal)))
@@ -101,16 +85,12 @@
                    ;; omits the aggregate LF/LH/BRF/BRH records.
                    ((coverage-number line "DA:")
                     (incf expression-total)
-                    (let ((comma (position #\, line :start 3)))
-                      (when (and comma
-                                 (plusp (parse-integer line :start (1+ comma))))
-                        (incf expression-covered))))
+                    (when (plusp (or (coverage-record-count line) 0))
+                      (incf expression-covered)))
                    ((coverage-number line "BA:")
                     (incf branch-total)
-                    (let ((comma (position #\, line :start 3)))
-                      (when (and comma
-                                 (= 2 (parse-integer line :start (1+ comma))))
-                        (incf branch-covered))))))
+                    (when (eql 2 (coverage-record-count line))
+                      (incf branch-covered)))))
       (unless (plusp expression-total)
         (error "Coverage report has no expression records: ~A" path))
       (unless (plusp branch-total)
@@ -188,12 +168,9 @@ and preserve the expression paths that SB-COVER actually instruments."
               #\Tab (symbol-name metric) #\Tab covered #\Tab total
               #\Tab percent))))
 
-(let* ((root (uiop:pathname-parent-directory-pathname
-              (coverage-script-directory)))
-       (asd (merge-pathnames "cl-xml-kit.asd" root))
-       (report (merge-pathnames
-                (or (uiop:getenv "COVERAGE_LCOV") "coverage.lcov") root)))
-  (asdf:load-asd asd)
+(let ((report (merge-pathnames (or (uiop:getenv "COVERAGE_LCOV") "coverage.lcov")
+                               (cl-xml-kit/script-support:repository-root))))
+  (cl-xml-kit/script-support:load-project-definition)
   (let ((source-files (coverage-assert-inputs "source"
                                              (coverage-system-files "cl-xml-kit"))))
     (coverage-assert-inputs "test" (coverage-system-files "cl-xml-kit/test"))
@@ -205,8 +182,8 @@ and preserve the expression paths that SB-COVER actually instruments."
     ;; Include load-time definitions and initialization in the measured run.
     (sb-cover:reset-coverage)
     (asdf:operate 'asdf:load-op "cl-xml-kit/test" :force t)
-    (coverage-call-run-tests)
-    (coverage-run-xmlconf root)
+    (cl-xml-kit/script-support:call-run-tests)
+    (coverage-run-xmlconf)
     (sb-cover:lcov-report report)
     (let ((line-metrics (coverage-metrics report source-files))
           (metrics (coverage-native-metrics source-files)))
