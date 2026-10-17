@@ -1,96 +1,104 @@
 (in-package #:cl-xml-kit/test)
 
-(it "keeps the documented condition inheritance"
-  (expect (subtypep 'xml-unsupported-encoding 'xml-decode-error) :to-be-truthy)
-  (expect (subtypep 'xml-decode-error 'xml-input-error) :to-be-truthy)
-  (expect (subtypep 'xml-namespace-error 'xml-parse-error) :to-be-truthy))
+;; The parent of each condition, from the inheritance tree in the Conditions part of
+;; docs/design/architecture.md section 4. That tree lists no edit conditions, so
+;; their four rows pin the current edit hierarchy as a regression check only.
+(it-each ((xml-input-error xml-kit-error) (xml-decode-error xml-input-error)
+          (xml-unsupported-encoding xml-decode-error) (xml-parse-error xml-kit-error)
+          (xml-well-formedness-error xml-parse-error) (xml-namespace-error xml-parse-error)
+          (xml-external-resource-disabled xml-parse-error)
+          (xml-parser-state-error xml-parse-error) (xml-resource-limit-exceeded xml-kit-error)
+          (xml-invalid-resource-limit xml-kit-error) (xml-serialization-error xml-kit-error)
+          (xml-edit-error xml-kit-error) (xml-path-error xml-edit-error)
+          (xml-unsupported-edit xml-edit-error) (xml-edit-value-error xml-edit-error))
+    "derives ~S directly from ~S"
+    (type parent)
+  (expect (mapcar #'class-name
+                  (sb-mop:class-direct-superclasses (find-class type)))
+          :to-equal (list parent)))
 
-(it "retains shared and specific condition readers"
-  (let ((condition (make-condition 'xml-resource-limit-exceeded
-                                   :message "too deep" :kind :max-depth
-                                   :value 3 :limit 2)))
-    (expect (xml-condition-message condition) :to-equal "too deep")
-    (expect (xml-resource-limit-exceeded-kind condition) :to-equal :max-depth)
-    (expect (xml-resource-limit-exceeded-value condition) :to-equal 3)
-    (expect (xml-resource-limit-exceeded-limit condition) :to-equal 2)))
+(it "derives the base condition from ERROR"
+  (expect (subtypep 'xml-kit-error 'error) :to-be t))
 
-(it "retains every public condition payload"
-  (let ((decode (make-condition 'xml-decode-error :message "decode"
-                               :octet 255 :encoding :utf-8))
-        (unsupported (make-condition 'xml-unsupported-encoding
-                                     :message "unsupported" :encoding "UTF-16"
-                                     :reason :declaration))
-        (well-formed (make-condition 'xml-well-formedness-error
-                                     :constraint :root-element :expected "root"))
-        (namespace (make-condition 'xml-namespace-error
-                                   :prefix "p" :namespace-uri "urn:p"))
-        (external (make-condition 'xml-external-resource-disabled
-                                  :identifier "x.dtd" :kind :doctype))
-        (parser-state (make-condition 'xml-parser-state-error :parser :parser))
-        (invalid (make-condition 'xml-invalid-resource-limit
-                                 :kind :max-depth :value 0))
-        (serialization (make-condition 'xml-serialization-error
-                                       :object :object :path '(:element))))
-    (expect (list (xml-decode-error-octet decode)
-                  (xml-decode-error-encoding decode)
-                  (xml-unsupported-encoding-encoding unsupported)
-                  (xml-unsupported-encoding-reason unsupported)
-                  (xml-well-formedness-error-constraint well-formed)
-                  (xml-well-formedness-error-expected well-formed)
-                  (xml-namespace-error-prefix namespace)
-                  (xml-namespace-error-namespace-uri namespace)
-                  (xml-external-resource-disabled-identifier external)
-                  (xml-external-resource-disabled-kind external)
-                  (xml-parser-state-error-parser parser-state)
-                  (xml-invalid-resource-limit-kind invalid)
-                  (xml-invalid-resource-limit-value invalid)
-                  (xml-serialization-error-object serialization)
-                  (xml-serialization-error-path serialization))
-            :to-equal '(255 :utf-8 "UTF-16" :declaration :root-element "root"
-                         "p" "urn:p" "x.dtd" :doctype :parser :max-depth 0
-                         :object (:element)))))
+(it-each ((xml-decode-error (:octet 255 :encoding :utf-16le) xml-decode-error-octet 255)
+          (xml-decode-error (:octet 255 :encoding :utf-16le) xml-decode-error-encoding :utf-16le)
+          (xml-unsupported-encoding (:encoding "UTF-16" :reason :declaration)
+           xml-unsupported-encoding-encoding "UTF-16")
+          (xml-unsupported-encoding (:encoding "UTF-16" :reason :declaration)
+           xml-unsupported-encoding-reason :declaration)
+          (xml-well-formedness-error (:constraint :root-element :expected "root")
+           xml-well-formedness-error-constraint :root-element)
+          (xml-well-formedness-error (:constraint :root-element :expected "root")
+           xml-well-formedness-error-expected "root")
+          (xml-namespace-error (:prefix "p" :namespace-uri "urn:p")
+           xml-namespace-error-prefix "p")
+          (xml-namespace-error (:prefix "p" :namespace-uri "urn:p")
+           xml-namespace-error-namespace-uri "urn:p")
+          (xml-external-resource-disabled (:identifier "x.dtd" :kind :doctype)
+           xml-external-resource-disabled-identifier "x.dtd")
+          (xml-external-resource-disabled (:identifier "x.dtd" :kind :doctype)
+           xml-external-resource-disabled-kind :doctype)
+          (xml-parser-state-error (:parser :parser) xml-parser-state-error-parser :parser)
+          (xml-resource-limit-exceeded (:kind :max-depth :value 3 :limit 2)
+           xml-resource-limit-exceeded-kind :max-depth)
+          (xml-resource-limit-exceeded (:kind :max-depth :value 3 :limit 2)
+           xml-resource-limit-exceeded-value 3)
+          (xml-resource-limit-exceeded (:kind :max-depth :value 3 :limit 2)
+           xml-resource-limit-exceeded-limit 2)
+          (xml-invalid-resource-limit (:kind :max-depth :value 0)
+           xml-invalid-resource-limit-kind :max-depth)
+          (xml-invalid-resource-limit (:kind :max-depth :value 0)
+           xml-invalid-resource-limit-value 0)
+          (xml-serialization-error (:object :object :path (:element))
+           xml-serialization-error-object :object)
+          (xml-serialization-error (:object :object :path (:element))
+           xml-serialization-error-path (:element))
+          (xml-path-error (:path "/a/" :reason :syntax :index 3) xml-edit-error-path "/a/")
+          (xml-path-error (:path "/a/" :reason :syntax :index 3) xml-edit-error-reason :syntax)
+          (xml-path-error (:path "/a/" :reason :syntax :index 3) xml-path-error-index 3)
+          (xml-unsupported-edit (:path "/a/@xmlns" :reason :namespace-declaration)
+           xml-edit-error-path "/a/@xmlns")
+          (xml-unsupported-edit (:path "/a/@xmlns" :reason :namespace-declaration)
+           xml-edit-error-reason :namespace-declaration)
+          (xml-edit-value-error (:path "/a" :reason :malformed-fragment :cause :cause)
+           xml-edit-value-error-cause :cause))
+    "reads ~2@*~S of a ~0@*~S built with its initargs as ~3@*~S"
+    (type initargs reader expected)
+  (expect (funcall reader (apply #'make-condition type initargs)) :to-equal expected))
 
-(it "reports the shared condition metadata"
-  (let* ((position (make-xml-position :source "memory.xml"
-                                      :offset 4 :line 1 :column 5))
-         (condition (make-condition 'xml-kit-error
-                                    :message "bad XML"
-                                    :position position
-                                    :source "memory.xml")))
-    (expect (xml-condition-message condition) :to-equal "bad XML")
-    (expect (xml-condition-position condition) :to-equal position)
-    (expect (xml-condition-source condition) :to-equal "memory.xml")
-    (expect (with-output-to-string (stream)
-              (princ condition stream))
-            :to-equal "bad XML")))
+(it-each ((xml-kit-error xml-condition-message "An XML kit error occurred.")
+          (xml-kit-error xml-condition-position nil) (xml-kit-error xml-condition-source nil)
+          (xml-decode-error xml-decode-error-octet nil)
+          (xml-decode-error xml-decode-error-encoding :utf-8)
+          (xml-unsupported-encoding xml-unsupported-encoding-reason nil)
+          (xml-well-formedness-error xml-well-formedness-error-constraint nil)
+          (xml-well-formedness-error xml-well-formedness-error-expected nil)
+          (xml-namespace-error xml-namespace-error-prefix nil)
+          (xml-namespace-error xml-namespace-error-namespace-uri nil)
+          (xml-external-resource-disabled xml-external-resource-disabled-identifier nil)
+          (xml-external-resource-disabled xml-external-resource-disabled-kind nil)
+          (xml-parser-state-error xml-parser-state-error-parser nil)
+          (xml-serialization-error xml-serialization-error-object nil)
+          (xml-serialization-error xml-serialization-error-path nil)
+          (xml-path-error xml-path-error-index nil) (xml-path-error xml-edit-error-path nil)
+          (xml-edit-value-error xml-edit-value-error-cause nil)
+          (xml-edit-value-error xml-edit-error-reason nil))
+    "defaults ~S's ~S to ~S"
+    (type reader expected)
+  (expect (funcall reader (make-condition type)) :to-equal expected))
 
-(it "keeps the documented edit condition inheritance"
-  (expect (subtypep 'xml-edit-error 'xml-kit-error) :to-be-truthy)
-  (dolist (type '(xml-path-error xml-unsupported-edit xml-edit-value-error))
-    (expect (subtypep type 'xml-edit-error) :to-be-truthy)))
+(describe "shared metadata"
+  (it "keeps the message, position, and source of any package condition"
+    (let* ((position (make-xml-position :source "memory.xml" :offset 4 :line 1 :column 5))
+           (condition (make-condition 'xml-namespace-error :message "bad XML"
+                                                           :position position
+                                                           :source "memory.xml")))
+      (expect (list (xml-condition-message condition) (xml-condition-position condition)
+                    (xml-condition-source condition))
+              :to-equal (list "bad XML" position "memory.xml"))))
 
-(it "retains the edit condition payloads"
-  (let ((path-error (make-condition 'xml-path-error :message "bad path" :path "/a/"
-                                                    :reason :syntax :index 3))
-        (unsupported (make-condition 'xml-unsupported-edit :message "refused"
-                                                           :path "/a/@xmlns"
-                                                           :reason :namespace-declaration))
-        (value-error (make-condition 'xml-edit-value-error :message "bad value"
-                                                           :path "/a" :reason :malformed-fragment
-                                                           :cause :cause)))
-    (expect (list (xml-edit-error-path path-error) (xml-edit-error-reason path-error)
-                  (xml-path-error-index path-error) (xml-condition-message path-error)
-                  (xml-edit-error-path unsupported) (xml-edit-error-reason unsupported)
-                  (xml-edit-error-path value-error) (xml-edit-error-reason value-error)
-                  (xml-edit-value-error-cause value-error))
-            :to-equal '("/a/" :syntax 3 "bad path" "/a/@xmlns" :namespace-declaration
-                        "/a" :malformed-fragment :cause))))
-
-(it "defaults the optional edit condition payloads to nil"
-  (let ((path-error (make-condition 'xml-path-error :message "no match" :path "/a"
-                                                    :reason :no-match))
-        (value-error (make-condition 'xml-edit-value-error :message "bad"
-                                                           :reason :not-single-element)))
-    (expect (list (xml-path-error-index path-error) (xml-edit-value-error-cause value-error)
-                  (xml-edit-error-path value-error))
-            :to-equal '(nil nil nil))))
+  (it-each ((xml-kit-error "bad XML") (xml-resource-limit-exceeded "too deep")
+            (xml-path-error "bad path"))
+      "reports a ~S as its message ~S alone"
+      (type message)
+    (expect (princ-to-string (make-condition type :message message)) :to-equal message)))

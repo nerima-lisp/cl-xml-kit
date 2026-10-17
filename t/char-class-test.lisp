@@ -1,140 +1,129 @@
 (in-package #:cl-xml-kit/test)
 
-(defun xml-test-character (code)
-  "Return the implementation character for Unicode CODE."
-  (or (code-char code)
-      (error "Unicode code point #X~X is unavailable." code)))
+(defun classify (predicate code)
+  "Call the global function PREDICATE on the character with CODE.
+The library declares its predicates inline, so its own callers run open-coded
+copies; only a call through the symbol runs, and covers, the global definition."
+  (funcall predicate (or (code-char code)
+                         (error "Unicode code point #X~X is unavailable." code))))
 
-(it "recognizes XML Char [2] boundaries and exclusions"
-  (dolist (code '(#x9 #xA #xD #x20 #xD7FF #xE000 #xFDD0 #xFDEF
-                  #xFFFD #x10000 #x10FFFF))
-    (expect (cl-xml-kit::xml-char-p (xml-test-character code))
-            :to-equal t))
-  (dolist (code '(#x0 #x8 #xB #x1F #xD800 #xDFFF #xFFFE #xFFFF))
-    (expect (cl-xml-kit::xml-char-p (xml-test-character code))
-            :to-equal nil)))
+(describe "name characters"
+  ;; Expected values are read off XML 1.0 Fifth Edition, production [4]
+  ;; NameStartChar ::= ":" | [A-Z] | "_" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6]
+  ;;   | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D]
+  ;;   | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF]
+  ;;   | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+  ;; and production [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7
+  ;;   | [#x0300-#x036F] | [#x203F-#x2040].
+  ;; Namespaces in XML 1.0 [4] and [5] remove ":" from both for NCName.
+  ;; Columns: code, NameStartChar, NameChar, NCName start, NCName character.
+  (it-each ((#x2D nil t nil t) (#x2E nil t nil t) (#x2F nil nil nil nil)
+            (#x30 nil t nil t) (#x39 nil t nil t) (#x3A t t nil nil) (#x3B nil nil nil nil)
+            (#x40 nil nil nil nil) (#x41 t t t t) (#x5A t t t t) (#x5B nil nil nil nil)
+            (#x5F t t t t) (#x60 nil nil nil nil) (#x61 t t t t) (#x7A t t t t)
+            (#x7B nil nil nil nil) (#xB7 nil t nil t) (#xBF nil nil nil nil)
+            (#xC0 t t t t) (#xD6 t t t t) (#xD7 nil nil nil nil) (#xD8 t t t t)
+            (#xF6 t t t t) (#xF7 nil nil nil nil) (#xF8 t t t t) (#x2FF t t t t)
+            (#x300 nil t nil t) (#x36F nil t nil t) (#x370 t t t t) (#x37D t t t t)
+            (#x37E nil nil nil nil) (#x37F t t t t) (#x1FFF t t t t)
+            (#x2000 nil nil nil nil) (#x200B nil nil nil nil) (#x200C t t t t)
+            (#x200D t t t t) (#x200E nil nil nil nil) (#x203E nil nil nil nil)
+            (#x203F nil t nil t) (#x2040 nil t nil t) (#x2041 nil nil nil nil)
+            (#x2070 t t t t) (#x218F t t t t) (#x2190 nil nil nil nil)
+            (#x2BFF nil nil nil nil) (#x2C00 t t t t) (#x2FEF t t t t)
+            (#x2FF0 nil nil nil nil) (#x2FFF nil nil nil nil) (#x3000 nil nil nil nil)
+            (#x3001 t t t t) (#xD7FF t t t t) (#xF8FF nil nil nil nil) (#xF900 t t t t)
+            (#xFDCF t t t t) (#xFDD0 nil nil nil nil) (#xFDEF nil nil nil nil)
+            (#xFDF0 t t t t) (#xFFFD t t t t) (#x10000 t t t t) (#xEFFFF t t t t)
+            (#xF0000 nil nil nil nil))
+      "classifies code #x~X as NameStartChar ~S, NameChar ~S, NCName start ~S, NCName char ~S"
+      (code start name ncname-start ncname)
+    (expect (list (classify 'cl-xml-kit::xml-name-start-char-p code)
+                  (classify 'cl-xml-kit::xml-name-char-p code)
+                  (classify 'cl-xml-kit::xml-ncname-start-char-p code)
+                  (classify 'cl-xml-kit::xml-ncname-char-p code))
+            :to-equal (list start name ncname-start ncname)))
 
-(it "recognizes XML S [3] and its character boundaries"
-  (expect (cl-xml-kit::xml-space-p
-           (coerce '(#\Space #\Tab #\Return #\Newline) 'simple-string))
-          :to-equal t)
-  (expect (cl-xml-kit::xml-space-p "") :to-equal nil)
-  (expect (cl-xml-kit::xml-space-p " x") :to-equal nil)
-  (dolist (character '(#\Space #\Tab #\Return #\Newline))
-    (expect (cl-xml-kit::xml-space-char-p character) :to-equal t))
-  (expect (cl-xml-kit::xml-space-char-p #\A) :to-equal nil))
+  (it-each (((#x6E #x61 #x6D #x65) t) ((#x5F #x6E) t) ((#x61 #x2D #x2E #x5F #x39) t)
+            ((#x6E #x2E) t) ((#x61 #x300) t) ((#xC0 #xB7) t) ((#x61) t)
+            (() nil) ((#x61 #x3A #x62) nil) ((#x3A #x61) nil) ((#x31 #x6E) nil)
+            ((#x2D #x6E) nil) ((#xB7 #x61) nil) ((#x61 #xFDD0) nil) ((#x61 #xD7) nil)
+            ((#x61 #x20) nil))
+      "classifies the code sequence ~S as an NCName ~S"
+      (codes expected)
+    (expect (funcall 'cl-xml-kit::xml-ncname-p (map 'simple-string #'code-char codes))
+            :to-be expected)))
 
-(it "recognizes XML NameStartChar [4] boundaries"
-  (dolist (code '(#x3A #x41 #x5A #x5F #x61 #x7A #xC0 #xD6 #xD8 #xF6
-                  #xF8 #x2FF #x370 #x37D #x37F #x1FFF #x200C #x200D
-                  #x2070 #x218F #x2C00 #x2FEF #x3001 #xD7FF #xF900
-                  #xFDCF #xFDF0 #xFFFD #x10000 #xEFFFF))
-    (expect (cl-xml-kit::xml-name-start-char-p (xml-test-character code))
-            :to-equal t))
-  (dolist (code '(#x2D #x2E #x30 #xB7 #x37E #x200B #x2FFF #x3000
-                  #xFDD0 #xFDEF #xF0000))
-    (expect (cl-xml-kit::xml-name-start-char-p (xml-test-character code))
-            :to-equal nil)))
+(describe "XML characters and whitespace"
+  ;; XML 1.0 [2] Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD]
+  ;;   | [#x10000-#x10FFFF]
+  (it-each ((#x0 nil) (#x8 nil) (#x9 t) (#xA t) (#xB nil) (#xC nil) (#xD t) (#xE nil)
+            (#x1F nil) (#x20 t) (#xD7FF t) (#xD800 nil) (#xDFFF nil) (#xE000 t)
+            (#xFDD0 t) (#xFFFD t) (#xFFFE nil) (#xFFFF nil) (#x10000 t) (#x10FFFF t))
+      "classifies code #x~X as an XML Char ~S"
+      (code expected)
+    (expect (classify 'cl-xml-kit::xml-char-p code) :to-be expected))
 
-(it "recognizes XML NameChar [4a] additions"
-  (dolist (character '(#\- #\. #\0))
-    (expect (cl-xml-kit::xml-name-char-p character) :to-equal t))
-  (dolist (code '(#xB7 #x300 #x36F #x203F #x2040))
-    (expect (cl-xml-kit::xml-name-char-p (xml-test-character code))
-            :to-equal t))
-  (expect (cl-xml-kit::xml-name-char-p #\:) :to-equal t)
-  (expect (cl-xml-kit::xml-name-char-p (xml-test-character #x2FFF))
-          :to-equal nil))
+  ;; XML 1.0 [3] S ::= (#x20 | #x9 | #xD | #xA)+
+  (it-each ((#x20 t) (#x9 t) (#xD t) (#xA t) (#x41 nil) (#xB nil) (#xC nil) (#x85 nil)
+            (#xA0 nil) (#x2028 nil) (#x3000 nil))
+      "classifies code #x~X as an S character ~S"
+      (code expected)
+    (expect (classify 'cl-xml-kit::xml-space-char-p code) :to-be expected))
 
-(it "recognizes XML PubidChar [13] exactly"
-  (loop for character across
-        (coerce '(#\Space #\Return #\Newline
-                  #\A #\B #\C #\D #\E #\F #\G #\H #\I #\J #\K #\L #\M
-                  #\N #\O #\P #\Q #\R #\S #\T #\U #\V #\W #\X #\Y #\Z
-                  #\a #\b #\c #\d #\e #\f #\g #\h #\i #\j #\k #\l #\m
-                  #\n #\o #\p #\q #\r #\s #\t #\u #\v #\w #\x #\y #\z
-                  #\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9
-                  #\- #\' #\( #\) #\+ #\, #\. #\/ #\: #\= #\? #\; #\! #\*
-                  #\# #\@ #\$ #\_ #\%)
-                'simple-string)
-        do (expect (cl-xml-kit::xml-pubid-char-p character) :to-equal t))
-  (dolist (character '(#\" #\< #\> #\[ #\] #\^ #\` #\{ #\| #\}))
-    (expect (cl-xml-kit::xml-pubid-char-p character) :to-equal nil))
-  (expect (cl-xml-kit::xml-pubid-char-p (xml-test-character #xA0))
-          :to-equal nil))
+  (it-each (((#x20 #x9 #xD #xA) t) ((#x20) t) ((#x20 #x20 #x20) t) (() nil)
+            ((#x20 #x78) nil) ((#x78 #x20) nil) ((#x20 #xA0) nil))
+      "classifies the code sequence ~S as XML S ~S"
+      (codes expected)
+    (expect (funcall 'cl-xml-kit::xml-space-p (map 'simple-string #'code-char codes))
+            :to-be expected)))
 
-(it "recognizes XML Namespaces NCName strings"
-  (dolist (name '("name" "_name" "a-._9" "a:b"))
-    (expect (cl-xml-kit::xml-ncname-p name)
-            :to-equal (if (string= name "a:b") nil t)))
-  (expect (cl-xml-kit::xml-ncname-p "") :to-equal nil)
-  (expect (cl-xml-kit::xml-ncname-p "1name") :to-equal nil)
-  (expect (cl-xml-kit::xml-ncname-p "-name") :to-equal nil)
-  (expect (cl-xml-kit::xml-ncname-p "name.") :to-equal t)
-  (expect (cl-xml-kit::xml-ncname-p
-           (concatenate 'string "a" (string (xml-test-character #x300))))
-          :to-equal t)
-  (expect (cl-xml-kit::xml-ncname-p
-           (concatenate 'string "a" (string (xml-test-character #xFDD0))))
-          :to-equal nil))
+(describe "public identifier characters"
+  ;; XML 1.0 [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9]
+  ;;   | [-'()+,./:=?;!*#@$_%]
+  (it "accepts every PubidChar"
+    (expect (remove-if (lambda (character)
+                         (funcall 'cl-xml-kit::xml-pubid-char-p character))
+                       (concatenate 'string
+                                    (list #\Space #\Return #\Newline)
+                                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    "0123456789-'()+,./:=?;!*#@$_%"))
+            :to-equal ""))
 
-(it "executes every character classifier through its function binding"
-  (labels ((check (function positives negatives)
-             (dolist (value positives)
-               (expect (funcall function
-                                (if (integerp value)
-                                    (xml-test-character value)
-                                    value))
-                       :to-equal t))
-             (dolist (value negatives)
-               (expect (funcall function
-                                (if (integerp value)
-                                    (xml-test-character value)
-                                    value))
-                       :to-equal nil))))
-    (check #'cl-xml-kit::xml-char-p
-           '(#x9 #x20 #xD7FF #xE000 #x10FFFF)
-           '(#x0 #x8 #xD800 #xFFFE))
-    (check #'cl-xml-kit::xml-space-char-p
-           '(#x20 #x9 #xD #xA)
-           '(#x41))
-    (check #'cl-xml-kit::xml-space-p
-           '(" " "  " "   ")
-           '("" " x"))
-    (check #'cl-xml-kit::xml-name-start-char-p
-           '(#x3A #x5A #x7A #xC0 #xD8 #xF8 #x370 #x37F #x200C
-             #x2070 #x2C00 #x3001 #xF900 #xFDF0 #x10000)
-           '(#x2D #x30 #x37E #x200B #x2FFF #x3000 #xFDD0))
-    (check #'cl-xml-kit::xml-name-char-p
-           '(#x3A #x2D #x2E #x30 #xB7 #x300 #x203F)
-           '(#x2F #x2FFF))
-    (check #'cl-xml-kit::xml-pubid-char-p
-           '(#x20 #xD #xA #x41 #x61 #x30 #x2D #x27 #x28 #x29 #x2B
-             #x2C #x2E #x2F #x3A #x3D #x3F #x3B #x21 #x2A #x23 #x40
-             #x24 #x5F #x25)
-           '(#x22 #x3C #x3E))
-    (check #'cl-xml-kit::xml-ncname-start-char-p
-           '(#x41 #xC0)
-           '(#x3A #x2D))
-    (check #'cl-xml-kit::xml-ncname-char-p
-           '(#x41 #x2D #x2E #x30 #xB7 #x300 #x203F)
-           '(#x3A #x2F))
-    (check #'cl-xml-kit::xml-ncname-p
-           '("name" "a-._9")
-           '("" "1name" "a:b"))))
+  (it-each ((#x22) (#x26) (#x3C) (#x3E) (#x5B) (#x5C) (#x5D) (#x5E) (#x60) (#x7B) (#x7C)
+            (#x7D) (#x7E) (#x9) (#x7F) (#xA0) (#xC0))
+      "rejects code #x~X as a PubidChar"
+      (code)
+    (expect (classify 'cl-xml-kit::xml-pubid-char-p code) :to-be nil)))
 
-(it "weighs ASCII decimal and hexadecimal digits for character references"
-  (expect (mapcar (lambda (character) (cl-xml-kit::xml-digit-weight character 10))
-                  '(#\0 #\9 #\a #\F))
-          :to-equal '(0 9 nil nil))
-  (expect (mapcar (lambda (character) (cl-xml-kit::xml-digit-weight character 16))
-                  '(#\0 #\9 #\a #\f #\A #\F #\g #\G))
-          :to-equal '(0 9 10 15 10 15 nil nil)))
+(describe "character reference digits"
+  ;; XML 1.0 [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
+  (it-each ((#\0 10 0) (#\5 10 5) (#\9 10 9) (#\a 10 nil) (#\F 10 nil) (#\/ 10 nil)
+            (#\: 10 nil) (#\0 16 0) (#\9 16 9) (#\a 16 10) (#\f 16 15) (#\A 16 10)
+            (#\F 16 15) (#\g 16 nil) (#\G 16 nil) (#\@ 16 nil) (#\` 16 nil))
+      "weighs ~S in radix ~D as ~S"
+      (character radix expected)
+    (expect (cl-xml-kit::xml-digit-weight character radix) :to-be expected))
 
-(it "gives no weight to digits and letters of other scripts"
-  ;; Arabic-Indic, Devanagari, and fullwidth digits and letters, which
-  ;; DIGIT-CHAR-P weighs on SBCL.
-  (dolist (code '(#x660 #x665 #x966 #xFF10 #xFF19 #xFF21 #xFF41))
-    (let ((character (xml-test-character code)))
-      (expect (cl-xml-kit::xml-digit-weight character 10) :to-equal nil)
-      (expect (cl-xml-kit::xml-digit-weight character 16) :to-equal nil))))
+  ;; Arabic-Indic, Devanagari, and fullwidth digits, most of which DIGIT-CHAR-P
+  ;; weighs on SBCL, and fullwidth letters.
+  (it-each ((#x660) (#x665) (#x966) (#xFF10) (#xFF19) (#xFF21) (#xFF41))
+      "gives code #x~X no weight in either radix"
+      (code)
+    (expect (list (cl-xml-kit::xml-digit-weight (code-char code) 10)
+                  (cl-xml-kit::xml-digit-weight (code-char code) 16))
+            :to-equal '(nil nil)))
+
+  (it-sequential "kills every mutant of the digit weight function"
+    (let ((results
+            (mutation-results
+             "src/char-class.lisp" 'cl-xml-kit::xml-digit-weight
+             (lambda ()
+               (equal (mapcar (lambda (row)
+                                (funcall 'cl-xml-kit::xml-digit-weight
+                                         (first row) (second row)))
+                              '((#\0 10) (#\7 10) (#\a 10) (#\A 10) (#\3 16) (#\A 16)
+                                (#\F 16) (#\a 16) (#\f 16) (#\G 16) (#\g 16) (#\/ 16)))
+                      '(0 7 nil nil 3 10 15 10 15 nil nil nil))))))
+      (expect results :to-satisfy #'consp)
+      (expect (getf (assert-mutation-score results 1.0) :score) :to-equal 1.0))))

@@ -1,247 +1,160 @@
 (in-package #:cl-xml-kit/test)
 
-(defun input-at (value &rest arguments)
-  (apply #'cl-xml-kit::make-xml-input value arguments))
+(describe "line-end normalization"
+  (it-each (((#x61 #xD #xA #x62 #xD #x63) (#x61 #xA #x62 #xA #x63))
+            ((#xD #xD #xA) (#xA #xA)) ((#xD) (#xA)) ((#xA #xD) (#xA #xA))
+            ((#xD #x20 #xD) (#xA #x20 #xA)) ((#x61) (#x61)) (() ()))
+      "normalizes the codes ~S to ~S from a string and from a character stream"
+      (codes expected)
+    (let ((text (map 'string #'code-char codes))
+          (normalized (map 'string #'code-char expected)))
+      (expect (cl-xml-kit::xml-input-text (cl-xml-kit::make-xml-input text))
+              :to-equal normalized)
+      (expect (with-input-from-string (stream text)
+                (cl-xml-kit::xml-input-text (cl-xml-kit::make-xml-input stream)))
+              :to-equal normalized)))
 
-(defun string-of (&rest characters)
-  (coerce characters 'string))
+  ;; The alphabet holds both line-end characters next to three ordinary ones so that
+  ;; CR, LF, CRLF, and CRCRLF runs all occur within a few characters.
+  (it-property "normalizes line ends and numbers lines as XML 1.0 section 2.11 requires"
+      ((text (gen-string :max-length 20
+                         :alphabet (coerce '(#\a #\< #\Space #\Return #\Newline) 'string))))
+    (let* ((input (cl-xml-kit::make-xml-input text))
+           (normalized (normalized-line-ends text)))
+      (expect (cl-xml-kit::xml-input-text input) :to-equal normalized)
+      (expect (loop for offset from 0 to (length normalized)
+                    for position = (cl-xml-kit::xml-input-position-at input offset)
+                    for line-start = (let ((newline (position #\Newline normalized
+                                                              :end offset :from-end t)))
+                                       (if newline (1+ newline) 0))
+                    unless (and (= (xml-position-line position)
+                                   (1+ (count #\Newline normalized :end offset)))
+                                (= (xml-position-column position) (1+ (- offset line-start))))
+                      collect offset)
+              :to-equal nil))))
 
-(defun octets-of (&rest octets)
-  (make-array (length octets)
-              :element-type '(unsigned-byte 8)
-              :initial-contents octets))
+(describe "positions"
+  (it-each ((0 1 1) (1 1 2) (2 2 1) (3 2 2) (4 3 1) (5 3 2))
+      "places normalized offset ~D at line ~D, column ~D"
+      (offset line column)
+    (let* ((input (cl-xml-kit::make-xml-input (map 'string #'code-char
+                                                   '(#x61 #xD #xA #x62 #xD #x63))
+                                              :source "memory.xml"))
+           (position (cl-xml-kit::xml-input-position-at input offset)))
+      (expect (list (xml-position-source position) (xml-position-offset position)
+                    (xml-position-line position) (xml-position-column position))
+              :to-equal (list "memory.xml" offset line column))))
 
-(it "normalizes strings and reports normalized positions"
-  (let ((input (input-at (string-of #\a #\Return #\Linefeed #\b #\Return #\c)
-                         :source "memory.xml")))
-    (expect (cl-xml-kit::xml-input-p input) :to-be-truthy)
-    (expect (cl-xml-kit::xml-input-text input)
-            :to-equal (string-of #\a #\Linefeed #\b #\Linefeed #\c))
-    (expect (cl-xml-kit::xml-input-source input) :to-equal "memory.xml")
-    (let ((position (cl-xml-kit::xml-input-position-at input 2))
-          (end (cl-xml-kit::xml-input-position-at input 5)))
-      (expect (xml-position-offset position) :to-equal 2)
-      (expect (xml-position-line position) :to-equal 2)
-      (expect (xml-position-column position) :to-equal 1)
-      (expect (xml-position-line end) :to-equal 3)
-      (expect (xml-position-column end) :to-equal 2))))
-
-(it "accepts character streams using the same normalization"
-  (with-input-from-string
-      (stream (string-of #\f #\i #\r #\s #\t #\Return #\s #\e #\c #\o #\n #\d
-                         #\Linefeed #\t #\h #\i #\r #\d))
-    (let ((input (input-at stream :source "stream.xml")))
-      (expect (cl-xml-kit::xml-input-text input)
-              :to-equal (string-of #\f #\i #\r #\s #\t #\Linefeed #\s #\e #\c
-                                   #\o #\n #\d #\Linefeed #\t #\h #\i #\r #\d))
+  (it "names the stream source in positions of stream input"
+    (with-input-from-string (stream "first")
       (expect (xml-position-source
-               (cl-xml-kit::xml-input-position-at input 6))
-              :to-equal "stream.xml"))))
+               (cl-xml-kit::xml-input-position-at
+                (cl-xml-kit::make-xml-input stream :source "stream.xml") 3))
+              :to-equal "stream.xml")))
 
-(it "strips a UTF-8 BOM from octet input"
-  (let* ((octets (octets-of #xEF #xBB #xBF #x41 #x0D #x0A #x42))
-         (input (input-at octets :source "utf8.xml")))
-    (expect (cl-xml-kit::xml-input-text input)
-            :to-equal (string-of #\A #\Linefeed #\B))
-    (expect (xml-position-offset
-             (cl-xml-kit::xml-input-position-at input 0))
-            :to-equal 0)
-    (expect (xml-position-line
-             (cl-xml-kit::xml-input-position-at input 2))
-            :to-equal 2)))
+  (it-each ((-1) (2) (1.5) (nil))
+      "refuses the position offset ~S outside the one-character text"
+      (offset)
+    (expect (lambda () (cl-xml-kit::xml-input-position-at
+                        (cl-xml-kit::make-xml-input "x") offset))
+            :to-signal-xml
+            '(xml-input-error
+              (xml-condition-message
+               "XML input position offset must be between zero and the text length.")))))
 
-(defun utf-16-octets (string byte-order &key (bom t))
-  "Encode STRING as UTF-16 in BYTE-ORDER (:BE or :LE), led by a BOM when BOM."
-  (let ((units (if bom (list #xFEFF) '())))
-    (loop for character across string
-          for code = (char-code character)
-          do (if (< code #x10000)
-                 (push code units)
-                 (let ((offset (- code #x10000)))
-                   (push (+ #xD800 (ash offset -10)) units)
-                   (push (+ #xDC00 (logand offset #x3FF)) units))))
-    (apply #'octets-of
-           (loop for unit in (nreverse units)
-                 for high = (ash unit -8)
-                 for low = (logand unit #xFF)
-                 append (if (eq byte-order :be) (list high low) (list low high))))))
+(describe "input records"
+  (it "keeps copies of its text and source"
+    (let* ((source (copy-seq "memory.xml"))
+           (input (cl-xml-kit::make-xml-input "<a/>" :source source)))
+      (setf (char source 0) #\X)
+      (setf (char (cl-xml-kit::xml-input-text input) 0) #\X
+            (char (cl-xml-kit::xml-input-source input) 0) #\X)
+      (expect (list (cl-xml-kit::xml-input-p input) (cl-xml-kit::xml-input-text input)
+                    (cl-xml-kit::xml-input-source input))
+              :to-equal '(t "<a/>" "memory.xml"))))
 
-(defun caught-condition (type thunk)
-  (handler-case (progn (funcall thunk) nil)
-    (condition (caught) (and (typep caught type) caught))))
+  (it "defaults to no source and the default limits"
+    (let ((input (cl-xml-kit::make-xml-input "x")))
+      (expect (list (cl-xml-kit::xml-input-source input)
+                    (eq (cl-xml-kit::xml-input-limits input) *default-xml-resource-limits*))
+              :to-equal '(nil t))))
 
-(defparameter *utf-16-sample*
-  (format nil "<?xml version=\"1.0\"?>~C~C<r a=\"~C\">x ~C &amp; y<!--c--><?p d?></r>"
-          #\Return #\Linefeed (code-char #xE9) (code-char #x1D11E)))
+  (it "hands its normalized text, source, and limits to the tokenizer"
+    (let* ((limits (make-xml-resource-limits :max-name-length 2))
+           (input (cl-xml-kit::make-xml-input (map 'string #'code-char '(#x61 #xD #x62))
+                                              :source "tokenizer.xml" :limits limits))
+           (tokenizer (cl-xml-kit::make-xml-tokenizer
+                       (cl-xml-kit::xml-input-text input)
+                       :source (cl-xml-kit::xml-input-source input)
+                       :limits (cl-xml-kit::xml-input-limits input))))
+      (expect (list (cl-xml-kit::xml-tokenizer-input tokenizer)
+                    (cl-xml-kit::xml-tokenizer-source tokenizer)
+                    (eq (cl-xml-kit::xml-input-limits input) limits))
+              :to-equal (list (format nil "a~%b") "tokenizer.xml" t))))
 
-(it "parses BOM-marked UTF-16BE and UTF-16LE, declared or not, into the UTF-8 document"
-  (let ((expected (xml->string
-                   (parse-xml (sb-ext:string-to-octets *utf-16-sample*
-                                                       :external-format :utf-8))))
-        (declared (concatenate 'string "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
-                               (subseq *utf-16-sample* (length "<?xml version=\"1.0\"?>")))))
-    (dolist (byte-order '(:be :le))
-      (dolist (document (list *utf-16-sample* declared))
-        (expect (xml->string (parse-xml (utf-16-octets document byte-order)))
-                :to-equal expected)))))
+  (it-each (((42) "XML input must be a string, character input stream, or octet vector.")
+            ((#(65 66)) "XML input must be a string, character input stream, or octet vector.")
+            (("x" :source 1) "XML input SOURCE must be a string or NIL.")
+            (("x" :limits nil) "XML input LIMITS must be XML-RESOURCE-LIMITS."))
+      "refuses the input arguments ~S"
+      (arguments message)
+    (expect (lambda () (apply #'cl-xml-kit::make-xml-input arguments))
+            :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
 
-(it "accepts a UTF-16 declaration on BOM-marked UTF-16 input"
-  (dolist (byte-order '(:be :le))
+  (it "refuses an output stream as input"
+    (expect (lambda () (cl-xml-kit::make-xml-input (make-string-output-stream)))
+            :to-signal-xml
+            '(xml-input-error
+              (xml-condition-message
+               "XML input must be a string, character input stream, or octet vector.")))))
+
+(describe "input limits"
+  (it-each (("ABC" 3) ("ABCD" 4))
+      "accepts the ~S octets at the inclusive octet limit ~D"
+      (text limit)
     (expect (cl-xml-kit::xml-input-text
-             (input-at (utf-16-octets "<?xml version='1.0' encoding='utf-16'?><r/>"
-                                      byte-order)))
-            :to-equal "<?xml version='1.0' encoding='utf-16'?><r/>")))
+             (cl-xml-kit::make-xml-input (sb-ext:string-to-octets text :external-format :utf-8)
+                                         :limits (make-xml-resource-limits
+                                                  :max-input-octets limit)))
+            :to-equal text))
 
-(it "rejects a declared encoding that contradicts the UTF-16 BOM"
-  (dolist (byte-order '(:be :le))
-    (dolist (declared '("UTF-8" "ISO-8859-1"))
-      (let ((condition
-              (caught-condition
-               'xml-unsupported-encoding
-               (lambda ()
-                 (parse-xml (utf-16-octets
-                             (format nil "<?xml version=\"1.0\" encoding=\"~A\"?><r/>"
-                                     declared)
-                             byte-order))))))
-        (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
-        (expect (xml-unsupported-encoding-encoding condition) :to-equal declared)
-        (expect (xml-unsupported-encoding-reason condition)
-                :to-equal :declaration-contradicts-bom)))))
+  (it "refuses octets one beyond the octet limit before decoding them"
+    (expect (lambda () (cl-xml-kit::make-xml-input (octet-vector '(#x41 #x42 #xFF))
+                                                   :source "big.xml"
+                                                   :limits (make-xml-resource-limits
+                                                            :max-input-octets 2)))
+            :to-signal-xml '(xml-resource-limit-exceeded
+                             (xml-resource-limit-exceeded-kind :max-input-octets)
+                             (xml-resource-limit-exceeded-value 3)
+                             (xml-resource-limit-exceeded-limit 2)
+                             (xml-condition-source "big.xml")
+                             (xml-condition-message
+                              "XML input limit :MAX-INPUT-OCTETS exceeded: 3 is greater than 2."))))
 
-(it "rejects UTF-16 octet input without a BOM"
-  (dolist (byte-order '(:be :le))
-    (let ((condition
-            (caught-condition
-             'xml-unsupported-encoding
-             (lambda ()
-               (input-at (utf-16-octets "<?xml version=\"1.0\" encoding=\"UTF-16\"?><r/>"
-                                        byte-order :bom nil))))))
-      (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
-      (expect (xml-unsupported-encoding-encoding condition) :to-equal :utf-16)
-      (expect (xml-unsupported-encoding-reason condition)
-              :to-equal :utf-16-bom-required))))
+  (it-each (((#x61 #xD #xA #x62) 3) ((#x61 #x62 #x63) 3) (() 1))
+      "accepts the normalized codes ~S at the inclusive character limit ~D"
+      (codes limit)
+    (let ((text (map 'string #'code-char codes)))
+      (expect (cl-xml-kit::xml-input-text
+               (cl-xml-kit::make-xml-input text :limits (make-xml-resource-limits
+                                                         :max-document-characters limit)))
+              :to-equal (normalized-line-ends text))))
 
-(it "signals decode errors for unpaired surrogates and truncated UTF-16"
-  ;; Each input decodes "a" and then fails at the code unit starting at octet 4.
-  (dolist (case (list (list (octets-of #xFF #xFE #x61 0 #x00 #xD8 #x62 0) :utf-16le)
-                      (list (octets-of #xFE #xFF 0 #x61 #xDC #x00) :utf-16be)
-                      (list (octets-of #xFF #xFE #x61 0 #x3D #xD8) :utf-16le)
-                      (list (octets-of #xFE #xFF 0 #x61 0) :utf-16be)))
-    (destructuring-bind (octets encoding) case
-      (let ((condition (caught-condition 'xml-decode-error
-                                         (lambda () (input-at octets :source "s.xml")))))
-        (expect (typep condition 'xml-decode-error) :to-be-truthy)
-        (expect (typep condition 'xml-unsupported-encoding) :to-equal nil)
-        (expect (xml-decode-error-encoding condition) :to-equal encoding)
-        (expect (xml-decode-error-octet condition) :to-equal (aref octets 4))
-        (expect (xml-position-offset (xml-condition-position condition)) :to-equal 1)))))
+  (it "counts the characters of stream input against the character limit"
+    (expect (lambda ()
+              (with-input-from-string (stream "abcd")
+                (cl-xml-kit::make-xml-input stream :limits (make-xml-resource-limits
+                                                            :max-document-characters 3))))
+            :to-signal-xml '(xml-resource-limit-exceeded
+                             (xml-resource-limit-exceeded-kind :max-document-characters)
+                             (xml-resource-limit-exceeded-value 4)
+                             (xml-resource-limit-exceeded-limit 3))))
 
-(it "applies the octet and character limits to UTF-16 input"
-  (let ((octets (utf-16-octets "<a/>" :le)))
-    (let ((condition (caught-condition
-                      'xml-resource-limit-exceeded
-                      (lambda ()
-                        (input-at octets :limits (make-xml-resource-limits
-                                                  :max-input-octets 9))))))
-      (expect (xml-resource-limit-exceeded-kind condition) :to-equal :max-input-octets)
-      (expect (xml-resource-limit-exceeded-value condition) :to-equal 10))
-    (let ((condition (caught-condition
-                      'xml-resource-limit-exceeded
-                      (lambda ()
-                        (input-at octets :limits (make-xml-resource-limits
-                                                  :max-document-characters 3))))))
-      (expect (xml-resource-limit-exceeded-kind condition)
-              :to-equal :max-document-characters)
-      (expect (xml-resource-limit-exceeded-value condition) :to-equal 4))
-    (expect (cl-xml-kit::xml-input-text
-             (input-at octets :limits (make-xml-resource-limits
-                                       :max-input-octets 10
-                                       :max-document-characters 4)))
-            :to-equal "<a/>")))
-
-(it "rejects both UTF-32 BOM byte orders with the profile condition"
-  (dolist (octets (list (octets-of 0 0 #xFE #xFF #x00)
-                        (octets-of #xFF #xFE 0 0 #x00)))
-    (let ((condition nil))
-      (handler-case (input-at octets)
-        (xml-unsupported-encoding (caught) (setf condition caught)))
-      (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
-      (expect (xml-unsupported-encoding-encoding condition) :to-equal :utf-32)
-      (expect (xml-unsupported-encoding-reason condition)
-              :to-equal :utf-32-not-supported))))
-
-(it "maps codec decode failures to XML decode errors"
-  (let ((condition nil))
-    (handler-case (input-at (octets-of #xC3 #x28) :source "bad.xml")
-      (xml-decode-error (caught) (setf condition caught)))
-    (expect (typep condition 'xml-decode-error) :to-be-truthy)
-    (expect (xml-decode-error-encoding condition) :to-equal :utf-8)
-    (expect (xml-decode-error-octet condition) :to-equal #x28)
-    (expect (xml-position-source (xml-condition-position condition))
-            :to-equal "bad.xml")
-    (expect (xml-position-offset (xml-condition-position condition))
-            :to-equal 0)))
-
-(it "reports a decode error at the normalized position after CRLF and CR"
-  (let ((condition (caught-condition
-                    'xml-decode-error
-                    (lambda () (input-at (octets-of #x61 #x0D #x0A #x62 #x0D #x63 #xFF))))))
-    (expect (list (xml-position-offset (xml-condition-position condition))
-                  (xml-position-line (xml-condition-position condition))
-                  (xml-position-column (xml-condition-position condition)))
-            :to-equal '(5 3 2))))
-
-(it "accepts the inclusive input-octet boundary and rejects the next byte"
-  (let ((octets (octets-of #x41 #x42 #x43)))
-    (expect (cl-xml-kit::xml-input-text
-             (input-at octets
-                       :limits (make-xml-resource-limits :max-input-octets 3)))
-            :to-equal "ABC")
-    (let ((condition nil))
-      (handler-case
-          (input-at octets
-                    :limits (make-xml-resource-limits :max-input-octets 2))
-        (xml-resource-limit-exceeded (caught) (setf condition caught)))
-      (expect (xml-resource-limit-exceeded-kind condition)
-              :to-equal :max-input-octets)
-      (expect (xml-resource-limit-exceeded-value condition) :to-equal 3)
-      (expect (xml-resource-limit-exceeded-limit condition) :to-equal 2))))
-
-(it "counts normalized document characters with an inclusive boundary"
-  (let ((limits (make-xml-resource-limits :max-document-characters 3)))
-    (expect (cl-xml-kit::xml-input-text
-             (input-at (string-of #\a #\Return #\Linefeed #\b) :limits limits))
-            :to-equal (string-of #\a #\Linefeed #\b))
-    (let ((condition nil))
-      (handler-case (input-at "abcd" :limits limits)
-        (xml-resource-limit-exceeded (caught) (setf condition caught)))
-      (expect (xml-resource-limit-exceeded-kind condition)
-              :to-equal :max-document-characters)
-      (expect (xml-resource-limit-exceeded-value condition) :to-equal 4)
-      (expect (xml-resource-limit-exceeded-limit condition) :to-equal 3))))
-
-(it "passes normalized text and source to the tokenizer contract"
-  (let* ((input (input-at (string-of #\a #\Return #\b) :source "tokenizer.xml"))
-         (tokenizer
-           (cl-xml-kit::make-xml-tokenizer
-            (cl-xml-kit::xml-input-text input)
-            :source (cl-xml-kit::xml-input-source input)
-            :limits (cl-xml-kit::xml-input-limits input))))
-    (expect (cl-xml-kit::xml-tokenizer-input tokenizer)
-            :to-equal (string-of #\a #\Linefeed #\b))
-    (expect (cl-xml-kit::xml-tokenizer-source tokenizer)
-            :to-equal "tokenizer.xml")))
-
-(it "rejects invalid input options and position offsets"
-  (dolist (thunk (list
-                  (lambda () (input-at "x" :source 1))
-                  (lambda () (input-at "x" :limits nil))
-                  (lambda () (input-at 42))
-                  (lambda () (cl-xml-kit::xml-input-position-at
-                               (input-at "x") -1))
-                  (lambda () (cl-xml-kit::xml-input-position-at
-                               (input-at "x") 2))))
-    (expect (handler-case (progn (funcall thunk) nil)
-              (xml-input-error () t))
-            :to-be-truthy)))
-
+  (it "places the character-limit failure at the first character beyond the limit"
+    (expect (lambda ()
+              (cl-xml-kit::make-xml-input (format nil "ab~%cd")
+                                          :limits (make-xml-resource-limits
+                                                   :max-document-characters 4)))
+            :to-signal-xml '(xml-resource-limit-exceeded
+                             (xml-resource-limit-exceeded-value 5)
+                             (condition-place (nil 4 2 2))))))

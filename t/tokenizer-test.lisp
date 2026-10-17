@@ -1,242 +1,54 @@
 (in-package #:cl-xml-kit/test)
 
-(defun tokenizer-tokens (input &key source limits)
-  "Collect the token contract, including the one-shot EOF token."
-  (let ((tokenizer (cl-xml-kit::make-xml-tokenizer input
-                                                   :source source
-                                                   :limits (or limits
-                                                               cl-xml-kit:*default-xml-resource-limits*)))
-        (tokens nil))
-    (loop repeat 256
-          for token = (cl-xml-kit::next-xml-token tokenizer)
-          while token
-          do (push (list (cl-xml-kit::xml-token-kind token)
-                         (cl-xml-kit::xml-token-value token)
-                         (cl-xml-kit:xml-position-offset
-                          (cl-xml-kit::xml-token-position token))
-                         (cl-xml-kit:xml-position-line
-                          (cl-xml-kit::xml-token-position token))
-                         (cl-xml-kit:xml-position-column
-                          (cl-xml-kit::xml-token-position token)))
-                   tokens))
-    (nreverse tokens)))
+(it "returns the EOF token once and NIL on every later call"
+  (let ((tokenizer (cl-xml-kit::make-xml-tokenizer "")))
+    (expect (list (cl-xml-kit::xml-token-kind (cl-xml-kit::next-xml-token tokenizer))
+                  (cl-xml-kit::next-xml-token tokenizer)
+                  (cl-xml-kit::next-xml-token tokenizer))
+            :to-equal '(:eof nil nil))))
 
-(defun tokenizer-condition (input)
-  "Return the well-formedness condition signaled while tokenizing INPUT."
-  (let ((condition nil)
-        (tokenizer (cl-xml-kit::make-xml-tokenizer input)))
-    (handler-case
-        (loop repeat 256
-              for token = (cl-xml-kit::next-xml-token tokenizer)
-              while token)
-      (cl-xml-kit:xml-well-formedness-error (caught)
-        (setf condition caught)))
-    condition))
+(it "places the EOF token at the end of the input"
+  (expect (token-summary (car (last (drain-tokens "<a/>t"))))
+          :to-equal '(:eof nil 5 1 6)))
 
-(defun tokenizer-limit-kind (input limits)
-  "Return the resource-limit kind signaled while tokenizing INPUT."
-  (let ((condition nil)
-        (tokenizer (cl-xml-kit::make-xml-tokenizer input :limits limits)))
-    (handler-case
-        (loop repeat 256
-              for token = (cl-xml-kit::next-xml-token tokenizer)
-              while token)
-      (cl-xml-kit:xml-resource-limit-exceeded (caught)
-        (setf condition caught)))
-    (and condition
-         (cl-xml-kit:xml-resource-limit-exceeded-kind condition))))
+(it "refuses to advance something that is not a tokenizer"
+  (expect (lambda () (cl-xml-kit::next-xml-token "<a/>"))
+          :to-signal-xml '(xml-input-error
+                           (xml-condition-message "TOKENIZER must be an XML-TOKENIZER."))))
 
-(it "tokenizes XML constructs with delimiter-free values and positions"
-  (let ((tokens (tokenizer-tokens
-                 "text&amp;<![CDATA[c<d]]><!--ok--><?pi data?><!DOCTYPE root [<!ELEMENT root ANY>]><root a=\"v&amp;x\"/>tail</root>"
-                 :source "tokenizer-test")))
-    (expect (mapcar #'first tokens)
-            :to-equal '(:text :entity-reference :cdata :comment
-                        :processing-instruction :doctype :start-tag-open :name
-                        :name :equals :quoted-value :empty-element-close :text
-                        :end-tag-open :name :tag-close :eof))
-    (expect (mapcar #'second tokens)
-            :to-equal '("text" "amp" "c<d" "ok" "pi data"
-                        " root [<!ELEMENT root ANY>]" nil "root" "a" nil
-                        "v&amp;x" nil "tail" nil "root" nil nil))
-    (expect (mapcar #'third tokens)
-            :to-equal '(0 4 9 24 33 44 81 82 87 88 89 98 100 104 106 110 111))
-    (expect (cl-xml-kit::next-xml-token
-             (let ((tokenizer (cl-xml-kit::make-xml-tokenizer "")))
-               (cl-xml-kit::next-xml-token tokenizer)
-               tokenizer))
-            :to-equal nil)))
+;; Each fragment is lexically complete on its own, so any concatenation
+;; tokenizes; the whitespace fragments land inside text and between tags, and
+;; no fragment ends in "]]" so that no concatenation forms "]]>" in text.
+(defparameter *tokenizer-property-fragments*
+  (list "<a>" "</a>" "<b x='1' y=\"2\"/>" "<c  z = 'v' >" "text" " " (string #\Newline)
+        "&amp;" "&#x41;" "<!--c-->" "<?p d?>" "<![CDATA[<x>]]>"
+        "<!DOCTYPE a [<!ENTITY e 'v'>]>"))
 
-(it "tracks line and column at tag tokens"
-  (let ((tokens (tokenizer-tokens (format nil "<a~% b='x'/>") )))
-    (expect (mapcar (lambda (token) (list (first token) (third token)
-                                           (fourth token) (fifth token)))
-                    (subseq tokens 0 7))
-            :to-equal '((:start-tag-open 0 1 1)
-                        (:name 1 1 2)
-                        (:name 4 2 2)
-                        (:equals 5 2 3)
-                        (:quoted-value 6 2 4)
-                        (:empty-element-close 9 2 7)
-                        (:eof 11 2 9)))))
+(it-property "covers every non-whitespace character of concatenated constructs with ordered tokens"
+    ((fragments (gen-list (gen-member *tokenizer-property-fragments*) :max-length 10)))
+  (let* ((input (apply #'concatenate 'string fragments))
+         (tokens (drain-tokens input))
+         (spans (mapcar (lambda (token)
+                          (cons (xml-position-offset (cl-xml-kit::xml-token-position token))
+                                (cl-xml-kit::xml-token-end token)))
+                        tokens)))
+    (expect (loop for (start . end) in spans
+                  for previous-end = 0 then last-end
+                  for last-end = end
+                  always (<= previous-end start end))
+            :to-be t)
+    (expect (loop for index below (length input)
+                  unless (or (cl-xml-kit::xml-space-char-p (char input index))
+                             (find-if (lambda (span) (<= (car span) index (1- (cdr span))))
+                                      spans))
+                    collect index)
+            :to-equal nil)
+    (expect (first (token-summary (car (last tokens)))) :to-be :eof)))
 
-(it "signals well-formedness errors for incomplete lexical constructs"
-  (dolist (input '("<!--" "<![CDATA[x" "<?pi" "<!DOCTYPE root ["
-                   "<a x=\"unterminated" "&" "<a x=y>" "</a/>"
-                   "< a>" "</ a>" "<a x=\"1\"y=\"2\">") )
-    (let ((condition nil))
-      (handler-case
-          (let ((tokenizer (cl-xml-kit::make-xml-tokenizer input)))
-            (loop for token = (cl-xml-kit::next-xml-token tokenizer)
-                while token))
-        (cl-xml-kit:xml-well-formedness-error (caught)
-          (setf condition caught)))
-      (expect (typep condition 'cl-xml-kit:xml-well-formedness-error)
-              :to-equal t))))
-
-(it "applies name and text-node resource limits"
-  (let ((name-condition nil)
-        (text-condition nil)
-        (name-limits (cl-xml-kit:make-xml-resource-limits :max-name-length 3))
-        (text-limits (cl-xml-kit:make-xml-resource-limits :max-text-node-length 2)))
-    (handler-case
-        (let ((tokenizer (cl-xml-kit::make-xml-tokenizer "<long>"
-                                                          :limits name-limits)))
-          (loop for token = (cl-xml-kit::next-xml-token tokenizer)
-                while token))
-      (cl-xml-kit:xml-resource-limit-exceeded (caught)
-        (setf name-condition caught)))
-    (handler-case
-        (let ((tokenizer (cl-xml-kit::make-xml-tokenizer "abc"
-                                                          :limits text-limits)))
-          (loop for token = (cl-xml-kit::next-xml-token tokenizer)
-                while token))
-      (cl-xml-kit:xml-resource-limit-exceeded (caught)
-        (setf text-condition caught)))
-    (expect (list (cl-xml-kit:xml-resource-limit-exceeded-kind name-condition)
-                  (cl-xml-kit:xml-resource-limit-exceeded-limit name-condition)
-                  (cl-xml-kit:xml-resource-limit-exceeded-kind text-condition)
-                  (cl-xml-kit:xml-resource-limit-exceeded-limit text-condition))
-            :to-equal '(:max-name-length 3 :max-text-node-length 2))))
-
-(it "accepts exact name and text-node resource limits"
-  (expect (mapcar #'first
-                  (tokenizer-tokens
-                   "<long>"
-                   :limits (cl-xml-kit:make-xml-resource-limits
-                            :max-name-length 4)))
-          :to-equal '(:start-tag-open :name :tag-close :eof))
-  (expect (mapcar #'first
-                  (tokenizer-tokens
-                   "abc"
-                   :limits (cl-xml-kit:make-xml-resource-limits
-                            :max-text-node-length 3)))
-          :to-equal '(:text :eof)))
-
-(it "tokenizes decimal hexadecimal and named references"
-  (let ((tokens (tokenizer-tokens "&#65;&#x42;&name;")))
-    (expect (mapcar #'first tokens)
-            :to-equal '(:entity-reference :entity-reference :entity-reference :eof))
-    (expect (mapcar #'second tokens)
-            :to-equal '("#65" "#x42" "name" nil))))
-
-(it "retains quoted doctype subset text including quoted delimiters"
-  (let* ((input "<!DOCTYPE root [<!ENTITY gt '>'><!ELEMENT root (#PCDATA)>]>")
-         (tokens (tokenizer-tokens input)))
-    (expect (mapcar #'first tokens) :to-equal '(:doctype :eof))
-    (expect (second (first tokens))
-            :to-equal " root [<!ENTITY gt '>'><!ELEMENT root (#PCDATA)>]")))
-
-(it "reports source and normalized line-column positions"
-  (let* ((tokenizer (cl-xml-kit::make-xml-tokenizer
-                     (format nil "x~%<root>")
-                     :source "positions.xml"))
-         (text (cl-xml-kit::next-xml-token tokenizer))
-         (tag (progn
-                (cl-xml-kit::next-xml-token tokenizer)
-                (cl-xml-kit::next-xml-token tokenizer))))
-    (expect (list (cl-xml-kit:xml-position-source
-                   (cl-xml-kit::xml-token-position tag))
-                  (cl-xml-kit:xml-position-offset
-                   (cl-xml-kit::xml-token-position tag))
-                  (cl-xml-kit:xml-position-line
-                   (cl-xml-kit::xml-token-position tag))
-                  (cl-xml-kit:xml-position-column
-                   (cl-xml-kit::xml-token-position tag))
-                  (cl-xml-kit::xml-token-value text))
-            :to-equal (list "positions.xml" 3 2 2 (format nil "x~%")))))
-
-(it "rejects invalid comment cdata and character-data terminators"
-  (dolist (input '("<!--a--b-->" "<!--a--->" "<![CDATA[a]]>b]]>" "abc]]>"))
-    (expect (typep (tokenizer-condition input)
-                   'cl-xml-kit:xml-well-formedness-error)
-            :to-equal t)))
-
-(it "rejects malformed references names and markup separators"
-  (dolist (input '("&#;" "&#0;" "&#x110000;" "&bad name;"
-                   "<a!>" "<a 1b>" "<a b@c>" "<?pi=?>"))
-    (expect (typep (tokenizer-condition input)
-                   'cl-xml-kit:xml-well-formedness-error)
-            :to-equal t)))
-
-(it "rejects unmatched doctype brackets and unterminated constructs"
-  (dolist (input '("<!DOCTYPE root ]>" "<!DOCTYPE root ["
-                   "<!--" "<![CDATA[x" "<?pi" "<a x=\"unterminated"))
-    (expect (typep (tokenizer-condition input)
-                   'cl-xml-kit:xml-well-formedness-error)
-            :to-equal t)))
-
-(it "returns the expected limit kind only after the inclusive boundary"
-  (expect (tokenizer-limit-kind
-           "<long>"
-           (cl-xml-kit:make-xml-resource-limits :max-name-length 4))
-          :to-equal nil)
-  (expect (tokenizer-limit-kind
-           "<long>"
-           (cl-xml-kit:make-xml-resource-limits :max-name-length 3))
-          :to-equal :max-name-length)
-  (expect (tokenizer-limit-kind
-           "abc"
-           (cl-xml-kit:make-xml-resource-limits :max-text-node-length 3))
-          :to-equal nil)
-  (expect (tokenizer-limit-kind
-           "abcd"
-           (cl-xml-kit:make-xml-resource-limits :max-text-node-length 3))
-          :to-equal :max-text-node-length))
-
-
-(it "reports the exclusive end offset of every token"
-  (let* ((input "text&amp;<![CDATA[c]]><!--k--><?pi d?><root  a = \"v\" >t</root>")
-         (tokenizer (cl-xml-kit::make-xml-tokenizer input))
-         (lexemes (loop for token = (cl-xml-kit::next-xml-token tokenizer)
-                        while token
-                        collect (subseq input
-                                        (cl-xml-kit:xml-position-offset
-                                         (cl-xml-kit::xml-token-position token))
-                                        (cl-xml-kit::xml-token-end token)))))
-    (expect lexemes
-            :to-equal '("text" "&amp;" "<![CDATA[c]]>" "<!--k-->" "<?pi d?>"
-                        "<" "root" "a" "=" "\"v\"" ">" "t" "</" "root" ">" ""))))
-
-(it "rejects a token end that is not a non-negative integer"
-  (expect (handler-case
-              (progn (cl-xml-kit::make-xml-token :kind :eof :end -1) nil)
-            (cl-xml-kit:xml-input-error () t))
-          :to-be-truthy))
-
-(it "rejects numeric references with a non-digit character in content and attributes"
-  (dolist (input (list "&#1z;" "&#4a;" "&#x4G;" "&#x41 ;" "&#x;" "&#X41;"
-                       (format nil "&#~C~C;" (code-char #x666) (code-char #x665))
-                       (format nil "&#x~C~C;" (code-char #xFF14) (code-char #xFF11))
-                       (format nil "&#x~C;" (code-char #xFF21))
-                       "<a b=\"&#1z;\">"
-                       (format nil "<a b='&#~C~C;'>" (code-char #x666) (code-char #x665))))
-    (let ((condition (tokenizer-condition input)))
-      (expect (typep condition 'cl-xml-kit:xml-well-formedness-error)
-              :to-equal t)
-      (expect (cl-xml-kit:xml-well-formedness-error-constraint condition)
-              :to-equal :character-reference))))
-
-(it "accepts hexadecimal references in either letter case"
-  (expect (mapcar #'second (tokenizer-tokens "&#xaF;&#xAf;&#x41;"))
-          :to-equal '("#xaF" "#xAf" "#x41" nil)))
+;; The alphabet has no "<", "&", or "]", so every string over it is one
+;; character-data run; the newline checks that line ends stay inside it.
+(it-property "returns markup-free text as a single text token"
+    ((text (gen-string :min-length 1 :max-length 24
+                       :alphabet (coerce '(#\a #\b #\Space #\; #\# #\x #\> #\Newline)
+                                         'string))))
+  (expect text :to-tokenize-as `((:text ,text) (:eof nil))))

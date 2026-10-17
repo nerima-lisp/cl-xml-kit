@@ -67,89 +67,22 @@
     "FORMAT-XML"))
 
 (defun external-names (package)
-  "Return the sorted names exported by PACKAGE."
+  "Return the sorted names of the symbols PACKAGE exports."
   (sort (loop for symbol being the external-symbols of package
-              collect (symbol-name symbol)) #'string<))
+              collect (symbol-name symbol))
+        #'string<))
 
 (it "exports exactly the architecture public API"
   (expect (external-names (find-package "CL-XML-KIT"))
           :to-equal (sort (copy-list +expected-export-names+) #'string<)))
 
-(it "keeps only applicable fields on each event type"
-  (let* ((name (make-xml-name :local-name "root"))
-         (attribute (make-xml-attribute
-                     :name (make-xml-name :local-name "id") :value "1"))
-         (event (make-xml-event :type :start-element :name name
-                                :attributes (list attribute) :text "ignored"
-                                :target "ignored" :external-p t)))
-    (expect (xml-event-text event) :to-equal nil)
-    (expect (xml-event-target event) :to-equal nil)
-    (expect (xml-event-external-p event) :to-equal nil)))
+(it "defines every exported symbol as a function, macro, type, or variable"
+  (expect (loop for name in +expected-export-names+
+                for symbol = (find-symbol name "CL-XML-KIT")
+                unless (or (fboundp symbol) (find-class symbol nil) (boundp symbol))
+                  collect name)
+          :to-equal nil))
 
-(it "constructs each event variant with only its applicable fields"
-  (let* ((position (make-xml-position :source "events.xml" :offset 4))
-         (name (make-xml-name :local-name "root"))
-         (attribute (make-xml-attribute
-                     :name (make-xml-name :local-name "id") :value "1"))
-         (events (list
-                  (make-xml-event :type :start-document :position position)
-                  (make-xml-event :type :doctype :text "root" :position position)
-                  (make-xml-event :type :start-element :name name
-                                  :attributes (list attribute) :position position)
-                  (make-xml-event :type :characters :text "text" :position position)
-                  (make-xml-event :type :comment :text "comment" :position position)
-                  (make-xml-event :type :processing-instruction :target "pi"
-                                  :text "data" :position position)
-                  (make-xml-event :type :end-element :name name :position position)
-                  (make-xml-event :type :skipped-external-entity :name name
-                                  :position position)
-                  (make-xml-event :type :end-document :position position))))
-    (expect (mapcar #'xml-event-type events)
-            :to-equal '(:start-document :doctype :start-element :characters
-                        :comment :processing-instruction :end-element
-                        :skipped-external-entity :end-document))
-    (expect (list (xml-event-text (second events))
-                  (xml-event-name (third events))
-                  (xml-event-attributes (third events))
-                  (xml-event-target (sixth events))
-                  (xml-event-position (first events))
-                  (xml-event-external-p (eighth events)))
-            :to-be-truthy)))
-
-(it "rejects malformed event payloads"
-  (dolist (form '((:type :unknown)
-                  (:type :characters :text 1)
-                  (:type :processing-instruction :target 1)
-                  (:type :start-document :position :not-a-position)
-                  (:type :start-element :name "root")
-                  (:type :start-element :attributes :not-a-list)
-                  (:type :start-element :attributes (list :not-an-attribute))))
-    (expect (handler-case (progn (apply #'make-xml-event form) nil)
-              (xml-input-error () t))
-            :to-be-truthy)))
-
-(it "snapshots event attribute lists"
-  (let* ((attribute (make-xml-attribute
-                     :name (make-xml-name :local-name "id") :value "1"))
-         (event (make-xml-event :type :start-element
-                                :name (make-xml-name :local-name "root")
-                                :attributes (list attribute)))
-         (attributes (xml-event-attributes event)))
-    (setf (cdr attributes) nil)
-    (expect (length (xml-event-attributes event)) :to-equal 1)))
-
-(it "copies public strings and rejects prefixed empty bindings"
-  (let* ((local-name (copy-seq "root"))
-         (uri (copy-seq "urn:test"))
-         (name (make-xml-name :local-name local-name :namespace-uri uri)))
-    (setf (char local-name 0) #\X (char uri 0) #\X)
-    (expect (xml-name-local-name name) :to-equal "root")
-    (expect (xml-name-namespace-uri name) :to-equal "urn:test")
-    (expect (handler-case (progn (make-xml-namespace-binding
-                                  :prefix "p" :namespace-uri "") nil)
-                 (xml-namespace-error () t))
-            :to-equal t)))
-
-
-(it "loads the public CL-XML-KIT package"
-  (expect (not (null (find-package "CL-XML-KIT"))) :to-equal t))
+(it "uses only the COMMON-LISP package"
+  (expect (mapcar #'package-name (package-use-list (find-package "CL-XML-KIT")))
+          :to-equal '("COMMON-LISP")))

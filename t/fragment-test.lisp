@@ -1,142 +1,112 @@
 ;;;; t/fragment-test.lisp
+;;;;
+;;;; Fragments an edit writes: line-break conversion, the namespaces in scope
+;;;; where they land, the wrapper they are parsed in, and what is refused.
 
 (in-package #:cl-xml-kit/test)
 
-(defun fragment-context (source &rest options)
-  "Return a path context for SOURCE; OPTIONS override the default limits and policy."
-  (apply #'cl-xml-kit::%path-context source "/target"
-         (append options
-                 (list :resource-limits *default-xml-resource-limits*
-                       :external-entity-policy :reject))))
+(describe "line breaks and whitespace"
+  (it-each (("a{cr}{lf}b{cr}c{lf}d" :lf "a{lf}b{lf}c{lf}d")
+            ("a{cr}{lf}b{cr}c{lf}d" :crlf "a{cr}{lf}b{cr}{lf}c{cr}{lf}d")
+            ("a{cr}{lf}b{cr}c{lf}d" :cr "a{cr}b{cr}c{cr}d")
+            ("{cr}{cr}{lf}{lf}" :crlf "{cr}{lf}{cr}{lf}{cr}{lf}")
+            ("plain text" :crlf "plain text"))
+      "converts the line breaks of ~S to ~S as ~S"
+      (input style expected)
+    (expect (cl-xml-kit::%edit-convert-line-breaks (spans-lines input) style)
+            :to-equal (spans-lines expected)))
 
-(defun fragment-chain (source)
-  "Return the DOM elements from the innermost element of SOURCE outward, where SOURCE nests one child per level."
-  (let ((chain nil)
-        (element (first (xml-document-children (parse-xml source)))))
-    (loop while element
-          do (push element chain)
-             (setf element (find-if #'xml-element-p (xml-element-children element))))
-    chain))
+  (it-each (("  a b  " "a b")
+            ("{tab}{cr}{lf}<x/>{lf} " "<x/>")
+            ("   " "")
+            ("" ""))
+      "trims the XML whitespace around ~S to ~S"
+      (input expected)
+    (expect (cl-xml-kit::%trim-xml-space (spans-lines input)) :to-equal expected)))
 
-(defun fragment-failure (thunk)
-  "Return (REASON CAUSE-TYPE) of the XML-EDIT-VALUE-ERROR that THUNK signals, or (:returned)."
-  (handler-case (progn (funcall thunk) (list :returned))
-    (xml-edit-value-error (caught)
-      (list (xml-edit-error-reason caught)
-            (let ((cause (xml-edit-value-error-cause caught)))
-              (and cause (type-of cause)))))))
-
-;;; Line breaks
-
-(it "converts every line break of a string to the requested style"
-  (let ((input (format nil "a~C~Cb~Cc~Cd" #\Return #\Linefeed #\Return #\Linefeed)))
-    (expect (cl-xml-kit::%edit-convert-line-breaks input :lf)
-            :to-equal (format nil "a~Cb~Cc~Cd" #\Linefeed #\Linefeed #\Linefeed))
-    (expect (cl-xml-kit::%edit-convert-line-breaks input :crlf)
-            :to-equal (format nil "a~C~Cb~C~Cc~C~Cd" #\Return #\Linefeed #\Return #\Linefeed
-                              #\Return #\Linefeed))
-    (expect (cl-xml-kit::%edit-convert-line-breaks input :cr)
-            :to-equal (format nil "a~Cb~Cc~Cd" #\Return #\Return #\Return))))
-
-(it "leaves a string without line breaks as it is"
-  (expect (cl-xml-kit::%edit-convert-line-breaks "plain text" :crlf) :to-equal "plain text"))
-
-;;; Namespace scope
-
-(it "collects the bindings in scope, letting an inner declaration replace an outer one"
-  (let ((chain (fragment-chain "<a xmlns=\"d\" xmlns:p=\"u1\"><b xmlns:p=\"u2\" xmlns:q=\"u3\"><c/></b></a>")))
-    (expect (sort (copy-list (cl-xml-kit::%edit-scope-bindings chain))
+(describe "namespace scope"
+  (it "collects the bindings in scope, letting an inner declaration replace an outer one"
+    (expect (sort (copy-list
+                   (cl-xml-kit::%edit-scope-bindings
+                    (edit-chain "<a xmlns=\"d\" xmlns:p=\"u1\"><b xmlns:p=\"u2\" xmlns:q=\"u3\"><c/></b></a>")))
                   #'string< :key (lambda (binding) (or (car binding) "")))
-            :to-equal '((nil . "d") ("p" . "u2") ("q" . "u3")))))
+            :to-equal '((nil . "d") ("p" . "u2") ("q" . "u3"))))
 
-(it "leaves out an undeclared default namespace"
-  (expect (cl-xml-kit::%edit-scope-bindings
-           (fragment-chain "<a xmlns=\"d\"><b xmlns=\"\"><c/></b></a>"))
-          :to-equal nil))
+  (it "leaves out an undeclared default namespace"
+    (expect (cl-xml-kit::%edit-scope-bindings
+             (edit-chain "<a xmlns=\"d\"><b xmlns=\"\"><c/></b></a>"))
+            :to-equal nil))
 
-(it "has no bindings outside every element"
-  (expect (cl-xml-kit::%edit-scope-bindings nil) :to-equal nil))
+  (it "has no bindings outside every element"
+    (expect (cl-xml-kit::%edit-scope-bindings nil) :to-equal nil))
 
-(it "wraps a fragment in an element that declares the bindings"
-  (expect (cl-xml-kit::%edit-fragment-wrapper '((nil . "urn:d") ("p" . "urn:p")) "<a/>")
-          :to-equal "<w xmlns=\"urn:d\" xmlns:p=\"urn:p\"><a/></w>")
-  (expect (cl-xml-kit::%edit-fragment-wrapper nil "<a/>") :to-equal "<w><a/></w>"))
+  (it-each ((((nil . "urn:d") ("p" . "urn:p")) "<w xmlns=\"urn:d\" xmlns:p=\"urn:p\"><a/></w>")
+            (nil "<w><a/></w>")
+            ((("p" . "a\"b&c<d")) "<w xmlns:p=\"a&quot;b&amp;c&lt;d\"><a/></w>"))
+      "wraps a fragment in an element that declares ~S, escaping each URI, as ~S"
+      (bindings expected)
+    (expect (cl-xml-kit::%edit-fragment-wrapper bindings "<a/>") :to-equal expected)))
 
-(it "escapes a namespace URI in the wrapper"
-  (expect (cl-xml-kit::%edit-fragment-wrapper '(("p" . "a\"b&c<d")) "<a/>")
-          :to-equal "<w xmlns:p=\"a&quot;b&amp;c&lt;d\"><a/></w>"))
+(describe "parsing a fragment"
+  (it "returns the one element of a fragment and the fragment without surrounding whitespace"
+    (multiple-value-bind (element text)
+        (fragment-element (spans-lines " {cr}{lf}<a b=\"1\"/>{tab} "))
+      (expect (xml-name-local-name (xml-element-name element)) :to-equal "a")
+      (expect text :to-equal "<a b=\"1\"/>")))
 
-;;; Parsing a fragment
+  (it-each (("<a/>" nil "urn:d")
+            ("<p:a/>" "p" "urn:p")
+            ("<q:a xmlns:q=\"urn:q\"/>" "q" "urn:q"))
+      "parses ~S where it lands, in the namespace of prefix ~S, ~S"
+      (fragment prefix uri)
+    (let ((name (xml-element-name (fragment-element fragment))))
+      (expect (list (xml-name-prefix name) (xml-name-namespace-uri name))
+              :to-equal (list prefix uri))))
 
-(defparameter +fragment-source+
-  "<target xmlns=\"urn:d\" xmlns:p=\"urn:p\"><inner/></target>")
+  (it "accepts a fragment that is within the limits of the caller"
+    (expect (xml-element-attributes (fragment-element "<a x=\"1\" y=\"2\"/>"))
+            :to-have-length 2)))
 
-(defun fragment-element (fragment &rest options)
-  (let* ((context (apply #'fragment-context +fragment-source+ options))
-         (chain (fragment-chain +fragment-source+)))
-    (cl-xml-kit::%edit-fragment-element context chain fragment)))
+(describe "refused fragments"
+  (it-each (("") ("   ") ("text") ("<a/><b/>") ("<a/> tail") ("head <a/>") ("<!--c--><a/>")
+            ("<a/><!--c-->") ("<?p x?><a/>"))
+      "refuses the fragment ~S, which is not exactly one element"
+      (fragment)
+    (expect (lambda () (fragment-element fragment))
+            :to-signal-xml '(xml-edit-value-error
+                             (xml-edit-error-reason :not-single-element)
+                             (xml-edit-error-path "/target")
+                             (edit-cause-type nil)
+                             (xml-condition-message "The fragment must be exactly one element."))))
 
-(it "returns the one element of a fragment and the fragment without surrounding whitespace"
-  (multiple-value-bind (element text)
-      (fragment-element (format nil " ~C~C<a b=\"1\"/>~C " #\Return #\Linefeed #\Tab))
-    (expect (xml-name-local-name (xml-element-name element)) :to-equal "a")
-    (expect text :to-equal "<a b=\"1\"/>")))
+  (it-each (("<a>" :reject xml-well-formedness-error)
+            ("<a></b>" :reject xml-well-formedness-error)
+            ("<z:a/>" :reject xml-namespace-error)
+            ("<a>&xxe;</a>" :reject xml-well-formedness-error)
+            ("<!DOCTYPE a><a/>" :reject xml-well-formedness-error)
+            ("<!DOCTYPE a><a/>" :skip xml-well-formedness-error)
+            ("<!DOCTYPE a [<!ENTITY x SYSTEM \"x.ent\">]><a>&x;</a>" :reject xml-well-formedness-error)
+            ("<!DOCTYPE a [<!ENTITY x SYSTEM \"x.ent\">]><a>&x;</a>" :skip xml-well-formedness-error)
+            ("<?xml version=\"1.0\"?><a/>" :reject xml-well-formedness-error)
+            ("<?xml version=\"1.0\"?><a/>" :skip xml-well-formedness-error)
+            ("</w><a/>" :reject xml-well-formedness-error)
+            ("a</w><w>b" :reject xml-well-formedness-error)
+            ("<a/></w><w>" :reject xml-well-formedness-error))
+      "refuses the fragment ~S under the ~S policy as malformed, keeping the ~S as its cause"
+      (fragment policy cause-type)
+    (expect (lambda () (fragment-element fragment :external-entity-policy policy))
+            :to-signal-xml (list 'xml-edit-value-error
+                                 '(xml-edit-error-reason :malformed-fragment)
+                                 '(xml-edit-error-path "/target")
+                                 (list 'edit-cause-type cause-type))))
 
-(it "puts an unprefixed fragment element in the default namespace in scope"
-  (expect (xml-name-namespace-uri (xml-element-name (fragment-element "<a/>")))
-          :to-equal "urn:d"))
-
-(it "resolves a prefix declared where the fragment is written"
-  (let ((name (xml-element-name (fragment-element "<p:a/>"))))
-    (expect (list (xml-name-prefix name) (xml-name-namespace-uri name))
-            :to-equal '("p" "urn:p"))))
-
-(it "keeps a namespace declaration that the fragment makes itself"
-  (let ((element (fragment-element "<q:a xmlns:q=\"urn:q\"/>")))
-    (expect (xml-name-namespace-uri (xml-element-name element)) :to-equal "urn:q")))
-
-(it "refuses a fragment that is not exactly one element"
-  (dolist (fragment '("" "   " "text" "<a/><b/>" "<a/> tail" "head <a/>" "<!--c--><a/>"
-                      "<a/><!--c-->" "<?p x?><a/>"))
-    (expect (fragment-failure (lambda () (fragment-element fragment)))
-            :to-equal '(:not-single-element nil))))
-
-(it "refuses a fragment that does not parse and keeps the parse condition"
-  (expect (fragment-failure (lambda () (fragment-element "<a>")))
-          :to-equal '(:malformed-fragment xml-well-formedness-error))
-  (expect (fragment-failure (lambda () (fragment-element "<a></b>")))
-          :to-equal '(:malformed-fragment xml-well-formedness-error)))
-
-(it "refuses a prefix that is not in scope"
-  (let ((failure (fragment-failure (lambda () (fragment-element "<z:a/>")))))
-    (expect (first failure) :to-equal :malformed-fragment)
-    (expect (subtypep (second failure) 'xml-parse-error) :to-be-truthy)))
-
-(it "refuses a DOCTYPE or an XML declaration in a fragment"
-  (dolist (fragment '("<!DOCTYPE a><a/>" "<!DOCTYPE a [<!ENTITY x SYSTEM \"x.ent\">]><a>&x;</a>"
-                      "<?xml version=\"1.0\"?><a/>"))
-    (expect (first (fragment-failure (lambda () (fragment-element fragment))))
-            :to-equal :malformed-fragment)
-    (expect (first (fragment-failure
-                    (lambda () (fragment-element fragment :external-entity-policy :skip))))
-            :to-equal :malformed-fragment)))
-
-(it "refuses a reference to an entity that the fragment does not declare"
-  (expect (fragment-failure (lambda () (fragment-element "<a>&xxe;</a>")))
-          :to-equal '(:malformed-fragment xml-well-formedness-error)))
-
-(it "refuses a fragment that tries to close the wrapper"
-  (dolist (fragment '("</w><a/>" "a</w><w>b" "<a/></w><w>"))
-    (expect (fragment-failure (lambda () (fragment-element fragment)))
-            :to-equal '(:malformed-fragment xml-well-formedness-error))))
-
-(it "accepts a fragment that is within the limits of the caller"
-  (expect (fragment-failure (lambda () (fragment-element "<a x=\"1\" y=\"2\"/>")))
-          :to-equal '(:returned)))
-
-(it "refuses a fragment that breaks a resource limit of the caller"
-  (let ((limits (make-xml-resource-limits :max-attributes-per-element 2)))
-    (expect (fragment-failure
-             (lambda ()
-               (fragment-element "<a x=\"1\" y=\"2\" z=\"3\"/>" :resource-limits limits)))
-            :to-equal '(:resource-limit xml-resource-limit-exceeded))))
+  (it "refuses a fragment that breaks a resource limit of the caller"
+    (expect (lambda ()
+              (fragment-element "<a x=\"1\" y=\"2\" z=\"3\"/>"
+                                :resource-limits (make-xml-resource-limits
+                                                  :max-attributes-per-element 2)))
+            :to-signal-xml '(xml-edit-value-error
+                             (xml-edit-error-reason :resource-limit)
+                             (xml-edit-error-path "/target")
+                             (edit-cause-type xml-resource-limit-exceeded)
+                             (edit-cause-limit-kind :max-attributes-per-element)))))
