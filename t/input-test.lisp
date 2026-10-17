@@ -113,6 +113,7 @@
              (lambda ()
                (input-at (utf-16-octets "<?xml version=\"1.0\" encoding=\"UTF-16\"?><r/>"
                                         byte-order :bom nil))))))
+      (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
       (expect (xml-unsupported-encoding-encoding condition) :to-equal :utf-16)
       (expect (xml-unsupported-encoding-reason condition)
               :to-equal :utf-16-bom-required))))
@@ -177,6 +178,15 @@
             :to-equal "bad.xml")
     (expect (xml-position-offset (xml-condition-position condition))
             :to-equal 0)))
+
+(it "reports a decode error at the normalized position after CRLF and CR"
+  (let ((condition (caught-condition
+                    'xml-decode-error
+                    (lambda () (input-at (octets-of #x61 #x0D #x0A #x62 #x0D #x63 #xFF))))))
+    (expect (list (xml-position-offset (xml-condition-position condition))
+                  (xml-position-line (xml-condition-position condition))
+                  (xml-position-column (xml-condition-position condition)))
+            :to-equal '(5 3 2))))
 
 (it "accepts the inclusive input-octet boundary and rejects the next byte"
   (let ((octets (octets-of #x41 #x42 #x43)))
