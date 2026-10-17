@@ -129,8 +129,7 @@ order a BOM selected."
       ((not (string-equal declared "UTF-16"))
        (%signal-unsupported-encoding
         declared :declaration-contradicts-bom
-        (format nil "The XML declaration names ~A, but the byte order mark selects UTF-16."
-                declared)
+        (xml-message :declaration-contradicts-bom declared)
         source)))))
 
 (defun %make-input (text encoding source limits)
@@ -179,7 +178,7 @@ order a BOM selected."
            :position (%position-after-decoded-prefix prefix source)
            :message (if (eq encoding :utf-8)
                         (xml-message :invalid-utf-8 octet-position)
-                        (format nil "Invalid UTF-16 input at octet ~D." octet-position)))))
+                        (xml-message :invalid-utf-16 octet-position)))))
 
 (defun %octet-encoding (octets source)
   "Return the encoding of OCTETS and the length of its byte order mark.
@@ -198,7 +197,7 @@ because U+0000 is not an XML character."
        (when (zerop bom-length)
          (%signal-unsupported-encoding
           :utf-16 :utf-16-bom-required
-          "UTF-16 input must begin with a byte order mark." source))))
+          (xml-message :utf-16-needs-bom) source))))
     (values encoding bom-length)))
 
 (defun %decode-octets (octets source)

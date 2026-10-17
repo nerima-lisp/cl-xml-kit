@@ -53,8 +53,11 @@
       ;; Input
       (:input-limit-exceeded "XML input limit ~S exceeded: ~D is greater than ~D.")
       (:invalid-utf-8 "Invalid UTF-8 input at octet ~D.")
-      (:encoding-not-supported "~A input is not supported by the XML UTF-8 profile.")
-      (:limits-specified-twice "Specify either LIMITS or RESOURCE-LIMITS, not both.")
+      (:invalid-utf-16 "Invalid UTF-16 input at octet ~D.")
+      (:utf-16-needs-bom "UTF-16 input must begin with a byte order mark.")
+      (:declaration-contradicts-bom
+       "The XML declaration names ~A, but the byte order mark selects UTF-16.")
+      (:encoding-not-supported "~A input is not supported.")
       (:input-type-unsupported
        "XML input must be a string, character input stream, or octet vector.")
       (:input-offset-out-of-range
@@ -98,7 +101,6 @@
        "Expected another attribute or tag close.")
       (:expected-close-after-end-tag-name "Expected '>' after an end-tag name.")
       (:unexpected-end-of-input "Unexpected end of XML input.")
-      (:unknown-tokenizer-state "Unknown tokenizer state.")
       ;; Namespaces
       (:resource-limit-exceeded "XML resource limit ~S exceeded.")
       (:qname-not-string "A qualified name must be a non-empty string.")
