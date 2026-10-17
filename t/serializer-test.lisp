@@ -56,6 +56,30 @@
     (expect (xml->string element)
             :to-equal "<root xmlns:nsA=\"urn:attr\" nsA:id=\"1\"/>")))
 
+(it "declares a generated prefix for each further namespaced unprefixed attribute"
+  (let ((element
+          (serializer-element
+           "root"
+           :attributes (list (make-xml-attribute
+                              :name (serializer-name "a" :namespace-uri "urn:x")
+                              :value "1")
+                             (make-xml-attribute
+                              :name (serializer-name "b" :namespace-uri "urn:y")
+                              :value "2")))))
+    (expect (xml->string element)
+            :to-equal
+            "<root xmlns:nsA=\"urn:x\" xmlns:nsB=\"urn:y\" nsA:a=\"1\" nsB:b=\"2\"/>")))
+
+(it "rejects an element name whose prefix the element declares for another URI"
+  (let ((element (serializer-element
+                  "root" :namespace-uri "urn:a" :prefix "p"
+                  :declarations (list (make-xml-namespace-binding
+                                       :prefix "p" :namespace-uri "urn:b")))))
+    (expect (handler-case (progn (xml->string element) :returned)
+              (xml-serialization-error (condition)
+                (xml-condition-message condition)))
+            :to-equal "A namespace declaration conflicts with a node name.")))
+
 (it "undeclares a default namespace when a child has no namespace"
   (let* ((child (serializer-element "child"))
          (root (serializer-element "root" :namespace-uri "urn:root"

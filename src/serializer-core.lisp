@@ -187,7 +187,7 @@
   (cond
     ((%same-uri-p prefix uri scope)
      (values scope declarations))
-    ((%binding prefix declarations)
+    ((find prefix declarations :key #'xml-namespace-binding-prefix :test #'equal)
      (%serializer-error object path
                         (xml-message :declaration-conflicts-with-name)))
     (t
