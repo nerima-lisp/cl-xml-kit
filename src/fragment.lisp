@@ -60,6 +60,14 @@ an undeclared default namespace is left out."
     (write-string fragment stream)
     (write-string "</w>" stream)))
 
+(defun %trim-xml-space (string)
+  "Return STRING without the XML whitespace at either end."
+  (let ((start (position-if-not #'xml-space-char-p string)))
+    (if start
+        (subseq string start
+                (1+ (position-if-not #'xml-space-char-p string :from-end t)))
+        "")))
+
 (defun %edit-fragment-element (context chain fragment)
   "Parse FRAGMENT as it would stand inside the innermost element of CHAIN.
 
@@ -70,7 +78,7 @@ namespaces in scope signals XML-EDIT-VALUE-ERROR :MALFORMED-FRAGMENT, or
 cause; one that parses to anything but a single element signals
 :NOT-SINGLE-ELEMENT."
   (let* ((path (path-context-path context))
-         (trimmed (string-trim '(#\Space #\Tab #\Return #\Linefeed) fragment))
+         (trimmed (%trim-xml-space fragment))
          (wrapper (handler-case
                       (parse-xml (%edit-fragment-wrapper (%edit-scope-bindings chain) trimmed)
                                  :resource-limits (path-context-resource-limits context)
