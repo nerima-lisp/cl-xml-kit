@@ -50,14 +50,110 @@
              (cl-xml-kit::xml-input-position-at input 2))
             :to-equal 2)))
 
-(it "rejects UTF-16 BOM octet input with the profile condition"
-  (let ((condition nil))
-    (handler-case (input-at (octets-of #xFF #xFE #x3C #x00))
-      (xml-unsupported-encoding (caught) (setf condition caught)))
-    (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
-    (expect (xml-unsupported-encoding-encoding condition) :to-equal :utf-16)
-    (expect (xml-unsupported-encoding-reason condition)
-            :to-equal :utf-16-not-supported)))
+(defun utf-16-octets (string byte-order &key (bom t))
+  "Encode STRING as UTF-16 in BYTE-ORDER (:BE or :LE), led by a BOM when BOM."
+  (let ((units (if bom (list #xFEFF) '())))
+    (loop for character across string
+          for code = (char-code character)
+          do (if (< code #x10000)
+                 (push code units)
+                 (let ((offset (- code #x10000)))
+                   (push (+ #xD800 (ash offset -10)) units)
+                   (push (+ #xDC00 (logand offset #x3FF)) units))))
+    (apply #'octets-of
+           (loop for unit in (nreverse units)
+                 for high = (ash unit -8)
+                 for low = (logand unit #xFF)
+                 append (if (eq byte-order :be) (list high low) (list low high))))))
+
+(defun caught-condition (type thunk)
+  (handler-case (progn (funcall thunk) nil)
+    (condition (caught) (and (typep caught type) caught))))
+
+(defparameter *utf-16-sample*
+  (format nil "<?xml version=\"1.0\"?>~C~C<r a=\"~C\">x ~C &amp; y<!--c--><?p d?></r>"
+          #\Return #\Linefeed (code-char #xE9) (code-char #x1D11E)))
+
+(it "parses BOM-marked UTF-16BE and UTF-16LE into the UTF-8 document"
+  (let ((expected (xml->string
+                   (parse-xml (sb-ext:string-to-octets *utf-16-sample*
+                                                       :external-format :utf-8)))))
+    (dolist (byte-order '(:be :le))
+      (expect (xml->string (parse-xml (utf-16-octets *utf-16-sample* byte-order)))
+              :to-equal expected))))
+
+(it "accepts a UTF-16 declaration on BOM-marked UTF-16 input"
+  (dolist (byte-order '(:be :le))
+    (expect (cl-xml-kit::xml-input-text
+             (input-at (utf-16-octets "<?xml version='1.0' encoding='utf-16'?><r/>"
+                                      byte-order)))
+            :to-equal "<?xml version='1.0' encoding='utf-16'?><r/>")))
+
+(it "rejects a declared encoding that contradicts the UTF-16 BOM"
+  (dolist (byte-order '(:be :le))
+    (dolist (declared '("UTF-8" "ISO-8859-1"))
+      (let ((condition
+              (caught-condition
+               'xml-unsupported-encoding
+               (lambda ()
+                 (parse-xml (utf-16-octets
+                             (format nil "<?xml version=\"1.0\" encoding=\"~A\"?><r/>"
+                                     declared)
+                             byte-order))))))
+        (expect (typep condition 'xml-unsupported-encoding) :to-be-truthy)
+        (expect (xml-unsupported-encoding-encoding condition) :to-equal declared)
+        (expect (xml-unsupported-encoding-reason condition)
+                :to-equal :declaration-contradicts-bom)))))
+
+(it "rejects UTF-16 octet input without a BOM"
+  (dolist (byte-order '(:be :le))
+    (let ((condition
+            (caught-condition
+             'xml-unsupported-encoding
+             (lambda ()
+               (input-at (utf-16-octets "<?xml version=\"1.0\" encoding=\"UTF-16\"?><r/>"
+                                        byte-order :bom nil))))))
+      (expect (xml-unsupported-encoding-encoding condition) :to-equal :utf-16)
+      (expect (xml-unsupported-encoding-reason condition)
+              :to-equal :utf-16-bom-required))))
+
+(it "signals decode errors for unpaired surrogates and truncated UTF-16"
+  ;; Each input decodes "a" and then fails at the code unit starting at octet 4.
+  (dolist (case (list (list (octets-of #xFF #xFE #x61 0 #x00 #xD8 #x62 0) :utf-16le)
+                      (list (octets-of #xFE #xFF 0 #x61 #xDC #x00) :utf-16be)
+                      (list (octets-of #xFF #xFE #x61 0 #x3D #xD8) :utf-16le)
+                      (list (octets-of #xFE #xFF 0 #x61 0) :utf-16be)))
+    (destructuring-bind (octets encoding) case
+      (let ((condition (caught-condition 'xml-decode-error
+                                         (lambda () (input-at octets :source "s.xml")))))
+        (expect (typep condition 'xml-decode-error) :to-be-truthy)
+        (expect (typep condition 'xml-unsupported-encoding) :to-equal nil)
+        (expect (xml-decode-error-encoding condition) :to-equal encoding)
+        (expect (xml-decode-error-octet condition) :to-equal (aref octets 4))
+        (expect (xml-position-offset (xml-condition-position condition)) :to-equal 1)))))
+
+(it "applies the octet and character limits to UTF-16 input"
+  (let ((octets (utf-16-octets "<a/>" :le)))
+    (let ((condition (caught-condition
+                      'xml-resource-limit-exceeded
+                      (lambda ()
+                        (input-at octets :limits (make-xml-resource-limits
+                                                  :max-input-octets 9))))))
+      (expect (xml-resource-limit-exceeded-kind condition) :to-equal :max-input-octets)
+      (expect (xml-resource-limit-exceeded-value condition) :to-equal 10))
+    (let ((condition (caught-condition
+                      'xml-resource-limit-exceeded
+                      (lambda ()
+                        (input-at octets :limits (make-xml-resource-limits
+                                                  :max-document-characters 3))))))
+      (expect (xml-resource-limit-exceeded-kind condition)
+              :to-equal :max-document-characters)
+      (expect (xml-resource-limit-exceeded-value condition) :to-equal 4))
+    (expect (cl-xml-kit::xml-input-text
+             (input-at octets :limits (make-xml-resource-limits
+                                       :max-input-octets 10
+                                       :max-document-characters 4)))
+            :to-equal "<a/>")))
 
 (it "rejects both UTF-32 BOM byte orders with the profile condition"
   (dolist (octets (list (octets-of 0 0 #xFE #xFF #x00)
@@ -127,11 +223,6 @@
   (dolist (thunk (list
                   (lambda () (input-at "x" :source 1))
                   (lambda () (input-at "x" :limits nil))
-                  (lambda () (input-at "x" :resource-limits nil))
-                  (lambda () (input-at "x" :limits
-                                        (make-xml-resource-limits)
-                                        :resource-limits
-                                        (make-xml-resource-limits)))
                   (lambda () (input-at 42))
                   (lambda () (cl-xml-kit::xml-input-position-at
                                (input-at "x") -1))

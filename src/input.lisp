@@ -29,43 +29,49 @@ retaining one position object per character.")
          :position (%input-position source offset line column)
          :message (xml-message :input-limit-exceeded kind value limit)))
 
-(defun %normalize-from-reader (reader limits source)
+(defun %signal-unsupported-encoding (encoding reason message source)
+  (error 'xml-unsupported-encoding
+         :encoding encoding
+         :reason reason
+         :source source
+         :position (%input-position source 0 1 1)
+         :message message))
+
+(defun %normalize-characters (text stream limits source)
+  "Return the characters of TEXT, or of STREAM when TEXT is NIL, with CRLF and CR as LF.
+
+The normalized length is checked against MAX-DOCUMENT-CHARACTERS."
   (let ((limit (xml-resource-limits-max-document-characters limits))
-        (text nil))
-    (setf text
-          (with-output-to-string (output)
-            (let ((offset 0)
-                  (line 1)
-                  (column 1)
-                  (pending nil)
-                  (pending-p nil))
-              (labels ((next-character ()
-                         (if pending-p
-                             (prog1 pending (setf pending-p nil))
-                             (funcall reader)))
-                       (emit (character)
-                         (when (>= offset limit)
-                           (%signal-input-limit
-                            :max-document-characters (1+ offset) limit
-                            source offset line column))
-                         (write-char character output)
-                         (incf offset)
-                         (if (char= character #\Linefeed)
-                             (progn
-                               (incf line)
-                               (setf column 1))
-                             (incf column))))
-                (loop for character = (next-character)
-                      while character
-                      do (if (char= character #\Return)
-                             (progn
-                               (let ((next (next-character)))
-                                 (when (and next
-                                            (not (char= next #\Linefeed)))
-                                   (setf pending next pending-p t)))
-                               (emit #\Linefeed))
-                             (emit character)))))))
-    text))
+        (index 0)
+        (end (if text (length text) 0))
+        (offset 0)
+        (line 1)
+        (column 1)
+        (pending nil))
+    (flet ((next-character ()
+             (cond
+               (pending (shiftf pending nil))
+               (text (when (< index end)
+                       (prog1 (char text index) (incf index))))
+               (t (read-char stream nil nil)))))
+      (declare (inline next-character))
+      (with-output-to-string (output)
+        (loop for raw = (next-character)
+              while raw
+              do (let ((character raw))
+                   (when (char= raw #\Return)
+                     (let ((following (next-character)))
+                       (unless (or (null following) (char= following #\Linefeed))
+                         (setf pending following)))
+                     (setf character #\Linefeed))
+                   (when (>= offset limit)
+                     (%signal-input-limit :max-document-characters (1+ offset) limit
+                                          source offset line column))
+                   (write-char character output)
+                   (incf offset)
+                   (if (char= character #\Linefeed)
+                       (setf line (1+ line) column 1)
+                       (incf column))))))))
 
 (defun %line-starts (text)
   (let ((starts (make-array 1 :adjustable t :fill-pointer 1)))
@@ -75,7 +81,60 @@ retaining one position object per character.")
             do (vector-push-extend (1+ index) starts))
     starts))
 
-(defun %make-input (text source limits)
+(defun %declared-encoding (text)
+  "Return the EncodingDecl value of the XML declaration that starts TEXT, or NIL.
+
+Only a declaration with VersionInfo 1.0 directly followed by an EncodingDecl
+yields a value; anything else returns NIL and is left to the parser."
+  (let ((index 0)
+        (end (or (search "?>" text) 0)))
+    (labels ((skip-space ()
+               (let ((start index))
+                 (loop while (and (< index end) (xml-space-char-p (char text index)))
+                       do (incf index))
+                 (> index start)))
+             (literal (string)
+               (let ((after (+ index (length string))))
+                 (when (and (<= after end) (string= string text :start2 index :end2 after))
+                   (setf index after))))
+             (quoted-value ()
+               (let* ((quote (and (< index end) (char text index)))
+                      (close (and (member quote '(#\" #\'))
+                                  (position quote text :start (1+ index) :end end))))
+                 (when close
+                   (prog1 (subseq text (1+ index) close)
+                     (setf index (1+ close))))))
+             (pseudo-attribute (name)
+               (and (literal name)
+                    (progn (skip-space) (literal "="))
+                    (progn (skip-space) (quoted-value)))))
+      (and (literal "<?xml")
+           (skip-space)
+           (equal (pseudo-attribute "version") "1.0")
+           (skip-space)
+           (pseudo-attribute "encoding")))))
+
+(defun %check-declared-encoding (text encoding source)
+  "Signal XML-UNSUPPORTED-ENCODING when TEXT declares an encoding other than ENCODING.
+
+ENCODING is :UTF-8 for character input and UTF-8 octets, or the UTF-16 byte
+order a BOM selected."
+  (let ((declared (%declared-encoding text)))
+    (cond
+      ((null declared))
+      ((eq encoding :utf-8)
+       (unless (string-equal declared "UTF-8")
+         (%signal-unsupported-encoding declared :declaration-not-utf-8
+                                       (xml-message :declaration-not-utf-8) source)))
+      ((not (string-equal declared "UTF-16"))
+       (%signal-unsupported-encoding
+        declared :declaration-contradicts-bom
+        (format nil "The XML declaration names ~A, but the byte order mark selects UTF-16."
+                declared)
+        source)))))
+
+(defun %make-input (text encoding source limits)
+  (%check-declared-encoding text encoding source)
   (%make-xml-input text (and source (copy-seq source))
                    (%line-starts text) limits))
 
@@ -111,81 +170,67 @@ retaining one position object per character.")
     ((and (integerp position) (<= 0 position) (< position (length octets)))
      (aref octets position))))
 
-(defun %signal-decode-error (condition octets start source)
+(defun %signal-decode-error (condition octets start encoding source)
   (let* ((octet-position (cl-codec-kit:decode-error-position condition))
          (prefix (cl-codec-kit:octets-to-string
-                  octets :start start :end octet-position :encoding :utf-8))
-         (position (%position-after-decoded-prefix prefix source)))
+                  octets :start start :end octet-position :encoding encoding)))
     (error 'xml-decode-error
            :octet (%codec-failing-octet condition octets octet-position)
-           :encoding :utf-8
+           :encoding encoding
            :source source
-           :position position
-           :message (xml-message :invalid-utf-8 octet-position))))
+           :position (%position-after-decoded-prefix prefix source)
+           :message (if (eq encoding :utf-8)
+                        (xml-message :invalid-utf-8 octet-position)
+                        (format nil "Invalid UTF-16 input at octet ~D." octet-position)))))
 
-(defun %unsupported-encoding-bom (octets)
-  (cond
-    ((and (>= (length octets) 4)
-          (or (and (= (aref octets 0) 0)
-                   (= (aref octets 1) 0)
-                   (= (aref octets 2) #xFE)
-                   (= (aref octets 3) #xFF))
-              (and (= (aref octets 0) #xFF)
-                   (= (aref octets 1) #xFE)
-                   (= (aref octets 2) 0)
-                   (= (aref octets 3) 0))))
-     (values :utf-32 :utf-32-not-supported))
-    ((and (>= (length octets) 2)
-          (or (and (= (aref octets 0) #xFE)
-                   (= (aref octets 1) #xFF))
-              (and (= (aref octets 0) #xFF)
-                   (= (aref octets 1) #xFE))))
-     (values :utf-16 :utf-16-not-supported))))
+(defun %octet-encoding (octets source)
+  "Return the encoding of OCTETS and the length of its byte order mark.
+
+UTF-32 and UTF-16 without a byte order mark signal XML-UNSUPPORTED-ENCODING.
+Input without a BOM whose leading octets contain a zero cannot be UTF-8 XML,
+because U+0000 is not an XML character."
+  (multiple-value-bind (encoding bom-length)
+      (cl-codec-kit:detect-unicode-encoding octets)
+    (case encoding
+      ((:utf-32be :utf-32le)
+       (%signal-unsupported-encoding :utf-32 :utf-32-not-supported
+                                     (xml-message :encoding-not-supported "UTF-32")
+                                     source))
+      ((:utf-16be :utf-16le)
+       (when (zerop bom-length)
+         (%signal-unsupported-encoding
+          :utf-16 :utf-16-bom-required
+          "UTF-16 input must begin with a byte order mark." source))))
+    (values encoding bom-length)))
+
+(defun %decode-octets (octets source)
+  "Return OCTETS decoded without their byte order mark, and the encoding used."
+  (multiple-value-bind (encoding start) (%octet-encoding octets source)
+    (handler-case
+        (values (cl-codec-kit:octets-to-string octets :start start :encoding encoding)
+                encoding)
+      (cl-codec-kit:decode-error (condition)
+        (%signal-decode-error condition octets start encoding source)))))
 
 (defun %make-octet-input (octets source limits)
   (let ((octet-limit (xml-resource-limits-max-input-octets limits)))
     (when (> (length octets) octet-limit)
       (%signal-input-limit
        :max-input-octets (length octets) octet-limit source 0 1 1))
-    (multiple-value-bind (encoding reason) (%unsupported-encoding-bom octets)
-      (if encoding
-          (error 'xml-unsupported-encoding
-                 :encoding encoding
-                 :reason reason
-                 :source source
-                 :position (%input-position source 0 1 1)
-                 :message (xml-message :encoding-not-supported
-                                       (string-upcase (symbol-name encoding))))
-          (progn
-            (let ((start (if (and (>= (length octets) 3)
-                                   (= (aref octets 0) #xEF)
-                                   (= (aref octets 1) #xBB)
-                                   (= (aref octets 2) #xBF))
-                             3
-                             0)))
-              (handler-case
-                  (let ((decoded (cl-codec-kit:octets-to-string
-                                   octets :start start :encoding :utf-8)))
-                    (%make-input
-                     (%normalize-from-reader
-                      (let ((index 0))
-                        (lambda ()
-                          (when (< index (length decoded))
-                            (prog1 (char decoded index) (incf index)))))
-                      limits source)
-                     source limits))
-                (cl-codec-kit:decode-error (condition)
-                  (%signal-decode-error condition octets start source)))))))))
+    (multiple-value-bind (decoded encoding) (%decode-octets octets source)
+      (%make-input (%normalize-characters decoded nil limits source)
+                   encoding source limits))))
 
-(defun make-xml-input (input &key source
-                                   (limits nil limits-supplied-p)
-                                   (resource-limits nil resource-limits-supplied-p))
-  "Return a normalized XML-INPUT for a string, character stream, or UTF-8 octets.
+(defun make-xml-input (input &key source (limits *default-xml-resource-limits*))
+  "Return a normalized XML-INPUT for a string, character stream, or octet vector.
 
-CRLF and CR are converted to LF. A UTF-8 BOM is consumed from octet input;
-UTF-16 or UTF-32 BOM input signals XML-UNSUPPORTED-ENCODING. INPUT octets are checked
-against MAX-INPUT-OCTETS before decoding, and normalized characters are
-checked against MAX-DOCUMENT-CHARACTERS with an inclusive boundary.
+CRLF and CR are converted to LF. Octet input is UTF-8, with or without a BOM,
+or UTF-16 with a BOM selecting its byte order; the BOM is consumed. UTF-32 and
+UTF-16 without a BOM signal XML-UNSUPPORTED-ENCODING, as does an XML
+declaration whose encoding differs from the input's: UTF-16 for BOM-marked
+UTF-16 octets and UTF-8 otherwise. INPUT octets are checked against
+MAX-INPUT-OCTETS before decoding, and normalized characters are checked
+against MAX-DOCUMENT-CHARACTERS with an inclusive boundary.
 
 The tokenizer consumes this result as follows:
 `(make-xml-tokenizer (xml-input-text input) :source
@@ -194,37 +239,22 @@ receives the normalized string, not the original stream or octet vector."
   (when (and source (not (stringp source)))
     (xml-error 'xml-input-error :label-must-be-string-or-nil
                :format-arguments ("XML input SOURCE")))
-  (when (and limits-supplied-p resource-limits-supplied-p)
-    (xml-error 'xml-input-error :limits-specified-twice))
-  (let ((selected-limits
-          (cond
-            (resource-limits-supplied-p resource-limits)
-            (limits-supplied-p limits)
-            (t *default-xml-resource-limits*))))
-    (unless (xml-resource-limits-p selected-limits)
-      (xml-error 'xml-input-error :label-must-be-resource-limits
-                 :format-arguments ("XML input LIMITS")))
-    (cond
-      ((stringp input)
-       (%make-input
-        (%normalize-from-reader
-         (let ((index 0))
-           (lambda ()
-             (when (< index (length input))
-               (prog1 (char input index) (incf index)))))
-         selected-limits source)
-        source selected-limits))
-      ((typep input '(vector (unsigned-byte 8)))
-       (%make-octet-input input source selected-limits))
-      ((and (streamp input)
-            (input-stream-p input)
-            (nth-value 0 (subtypep (stream-element-type input) 'character)))
-       (%make-input
-        (%normalize-from-reader
-         (lambda () (read-char input nil nil)) selected-limits source)
-        source selected-limits))
-      (t
-       (xml-error 'xml-input-error :input-type-unsupported)))))
+  (check-argument limits xml-resource-limits-p xml-input-error
+                  :label-must-be-resource-limits
+                  :format-arguments ("XML input LIMITS"))
+  (cond
+    ((stringp input)
+     (%make-input (%normalize-characters input nil limits source)
+                  :utf-8 source limits))
+    ((typep input '(vector (unsigned-byte 8)))
+     (%make-octet-input input source limits))
+    ((and (streamp input)
+          (input-stream-p input)
+          (nth-value 0 (subtypep (stream-element-type input) 'character)))
+     (%make-input (%normalize-characters nil input limits source)
+                  :utf-8 source limits))
+    (t
+     (xml-error 'xml-input-error :input-type-unsupported))))
 
 (defun xml-input-position-at (input offset)
   "Return the normalized XML position at character OFFSET.
@@ -247,4 +277,3 @@ position. The returned line and column are one-based."
                      offset
                      (1+ low)
                      (1+ (- offset (aref starts low))))))
-
