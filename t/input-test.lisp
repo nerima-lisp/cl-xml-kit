@@ -74,13 +74,16 @@
   (format nil "<?xml version=\"1.0\"?>~C~C<r a=\"~C\">x ~C &amp; y<!--c--><?p d?></r>"
           #\Return #\Linefeed (code-char #xE9) (code-char #x1D11E)))
 
-(it "parses BOM-marked UTF-16BE and UTF-16LE into the UTF-8 document"
+(it "parses BOM-marked UTF-16BE and UTF-16LE, declared or not, into the UTF-8 document"
   (let ((expected (xml->string
                    (parse-xml (sb-ext:string-to-octets *utf-16-sample*
-                                                       :external-format :utf-8)))))
+                                                       :external-format :utf-8))))
+        (declared (concatenate 'string "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
+                               (subseq *utf-16-sample* (length "<?xml version=\"1.0\"?>")))))
     (dolist (byte-order '(:be :le))
-      (expect (xml->string (parse-xml (utf-16-octets *utf-16-sample* byte-order)))
-              :to-equal expected))))
+      (dolist (document (list *utf-16-sample* declared))
+        (expect (xml->string (parse-xml (utf-16-octets document byte-order)))
+                :to-equal expected)))))
 
 (it "accepts a UTF-16 declaration on BOM-marked UTF-16 input"
   (dolist (byte-order '(:be :le))

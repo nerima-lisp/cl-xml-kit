@@ -425,14 +425,7 @@ end, which are NIL when BODY has no internal subset."
              (read-encoding ()
                (read-keyword "encoding")
                (read-equals)
-               (let ((encoding (read-quoted-value)))
-                 (unless (string-equal "UTF-8" encoding)
-                   (error 'xml-unsupported-encoding
-                          :encoding encoding
-                          :reason :declaration-not-utf-8
-                          :message (xml-message :declaration-not-utf-8)
-                          :source (xml-parser-source-name parser)
-                          :position (xml-token-position token)))))
+               (read-quoted-value))
              (read-standalone ()
                (read-keyword "standalone")
                (read-equals)
