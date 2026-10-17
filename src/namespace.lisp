@@ -21,23 +21,23 @@
          :limit limit
          :position position))
 
-(defun %namespace-check-name-limit (name resource-limits &key position)
+(defun %namespace-limits (resource-limits)
   (let ((limits (or resource-limits *default-xml-resource-limits*)))
     (unless (xml-resource-limits-p limits)
       (xml-error 'xml-input-error :resource-limits-value-required))
-    (let ((limit (xml-resource-limits-max-name-length limits))
-          (value (length name)))
-      (when (> value limit)
-        (%namespace-limit-error :max-name-length value limit :position position))))
+    limits))
+
+(defun %namespace-check-name-limit (name resource-limits &key position)
+  (let ((limit (xml-resource-limits-max-name-length
+                (%namespace-limits resource-limits)))
+        (value (length name)))
+    (when (> value limit)
+      (%namespace-limit-error :max-name-length value limit :position position)))
   name)
 
 (defun %namespace-ncname-p (name)
   (and (stringp name)
-       (plusp (length name))
-       (not (find #\: name))
-       (xml-ncname-start-char-p (char name 0))
-       (loop for index from 1 below (length name)
-             always (xml-ncname-char-p (char name index)))))
+       (xml-ncname-p (coerce name 'simple-string))))
 
 (defun %namespace-xml-prefix-p (prefix)
   (and (stringp prefix)
@@ -90,17 +90,11 @@
   (not (null (assoc prefix (%xml-namespace-context-bindings context)
                      :test #'equal))))
 
-(defun %namespace-declaration-prefix (binding)
-  (xml-namespace-binding-prefix binding))
-
-(defun %namespace-declaration-uri (binding)
-  (xml-namespace-binding-namespace-uri binding))
-
 (defun %namespace-validate-binding (binding &key position)
   (unless (xml-namespace-binding-p binding)
     (xml-error 'xml-input-error :namespace-binding-required))
-  (let ((prefix (%namespace-declaration-prefix binding))
-        (uri (%namespace-declaration-uri binding)))
+  (let ((prefix (xml-namespace-binding-prefix binding))
+        (uri (xml-namespace-binding-namespace-uri binding)))
     (when (and prefix (not (%namespace-ncname-p prefix)))
       (%namespace-error (xml-message :prefix-not-ncname)
                         :prefix prefix :namespace-uri uri :position position))
@@ -127,9 +121,14 @@
                         :prefix prefix :namespace-uri uri :position position))
     binding))
 
-(defun %namespace-binding-count (bindings)
-  (count-if (lambda (binding) (not (equal (car binding) "xml")))
-            bindings))
+(defun %namespace-check-binding-limit (bindings resource-limits position)
+  (let ((value (count-if (lambda (binding) (not (equal (car binding) "xml")))
+                         bindings))
+        (limit (xml-resource-limits-max-namespace-bindings
+                (%namespace-limits resource-limits))))
+    (when (> value limit)
+      (%namespace-limit-error :max-namespace-bindings value limit
+                              :position position))))
 
 (defun %namespace-apply-bindings
     (context declarations &key resource-limits position)
@@ -142,27 +141,20 @@
         (seen nil))
     (dolist (declaration declarations)
       (%namespace-validate-binding declaration :position position)
-      (let ((prefix (%namespace-declaration-prefix declaration)))
+      (let ((prefix (xml-namespace-binding-prefix declaration)))
         (when (member prefix seen :test #'equal)
           (%namespace-error (xml-message :prefix-declared-twice)
                             :prefix prefix
-                            :namespace-uri (%namespace-declaration-uri declaration)
+                            :namespace-uri (xml-namespace-binding-namespace-uri declaration)
                             :position position))
         (push prefix seen)
         (let ((entry (assoc prefix bindings :test #'equal)))
           (if entry
-              (setf (cdr entry) (copy-seq (%namespace-declaration-uri declaration)))
+              (setf (cdr entry) (copy-seq (xml-namespace-binding-namespace-uri declaration)))
               (push (cons (copy-seq prefix)
-                          (copy-seq (%namespace-declaration-uri declaration)))
+                          (copy-seq (xml-namespace-binding-namespace-uri declaration)))
                     bindings)))))
-    (let ((limits (or resource-limits *default-xml-resource-limits*)))
-      (unless (xml-resource-limits-p limits)
-        (xml-error 'xml-input-error :resource-limits-value-required))
-      (let ((value (%namespace-binding-count bindings))
-            (limit (xml-resource-limits-max-namespace-bindings limits)))
-        (when (> value limit)
-          (%namespace-limit-error :max-namespace-bindings value limit
-                                  :position position))))
+    (%namespace-check-binding-limit bindings resource-limits position)
     (%make-xml-namespace-context bindings)))
 
 (defun make-xml-namespace-context (&key bindings resource-limits position)
@@ -260,10 +252,10 @@
         (let ((key (%namespace-expanded-name-key name)))
           (when (member key seen :test #'equal)
             (xml-error 'xml-well-formedness-error :duplicate-expanded-attribute
-                       :condition-initargs (:constraint :unique-att-spec
-                   :expected "a unique expanded attribute name"
-                                            :position (or (xml-attribute-position attribute)
-                                                          position))))
+                       :condition-initargs
+                       (:constraint :unique-att-spec
+                        :expected "a unique expanded attribute name"
+                        :position (or (xml-attribute-position attribute) position))))
           (push key seen))))))
 
 (defun %namespace-attribute-entry (entry)
@@ -274,10 +266,9 @@
                :format-arguments ("An attribute value")))
   (values (car entry) (cdr entry)))
 
-(defun %namespace-resolve-attributes
-    (attribute-entries context &key resource-limits position)
-  "Resolve raw (NAME . VALUE) attributes in one namespace scope."
-  (%list-value attribute-entries "ATTRIBUTE-ENTRIES")
+(defun %namespace-partition-attributes (attribute-entries resource-limits position)
+  "Return the namespace declarations and the ordinary (NAME . VALUE) entries
+of ATTRIBUTE-ENTRIES, each in source order."
   (let ((declarations nil)
         (ordinary nil)
         (seen-lexical nil))
@@ -286,9 +277,10 @@
           (%namespace-attribute-entry entry)
         (when (member lexical-name seen-lexical :test #'string=)
           (xml-error 'xml-well-formedness-error :duplicate-attribute
-                     :condition-initargs (:constraint :unique-att-spec
-                 :expected "a unique attribute name"
-                                          :position position)))
+                     :condition-initargs
+                     (:constraint :unique-att-spec
+                      :expected "a unique attribute name"
+                      :position position)))
         (push lexical-name seen-lexical)
         (let ((declaration (%namespace-declaration-binding
                             lexical-name value
@@ -297,28 +289,25 @@
           (if declaration
               (push declaration declarations)
               (push (cons lexical-name value) ordinary)))))
-    (let ((ordered-declarations (nreverse declarations))
-          (ordered-ordinary (nreverse ordinary)))
-      (let ((child-context
-              (%namespace-apply-bindings
-               context ordered-declarations
-               :resource-limits resource-limits :position position)))
-        (let ((attributes
-                (mapcar (lambda (entry)
-                          (multiple-value-bind (lexical-name value)
-                              (%namespace-attribute-entry entry)
-                            (make-xml-attribute
-                             :name (%namespace-resolve-attribute-name
-                                    lexical-name child-context
-                                    :resource-limits resource-limits
-                                    :position position)
-                             :value value)))
-                        ordered-ordinary)))
-          (%namespace-check-unique-attributes attributes :position position)
-          (values attributes ordered-declarations child-context))))))
+    (values (nreverse declarations) (nreverse ordinary))))
 
-(defun %namespace-extend-context (context declarations &key resource-limits position)
-  (%namespace-apply-bindings context declarations
-                             :resource-limits resource-limits
-                             :position position))
-
+(defun %namespace-resolve-attributes
+    (attribute-entries context &key resource-limits position)
+  "Resolve raw (NAME . VALUE) attributes in one namespace scope."
+  (%list-value attribute-entries "ATTRIBUTE-ENTRIES")
+  (multiple-value-bind (declarations ordinary)
+      (%namespace-partition-attributes attribute-entries resource-limits position)
+    (let* ((child-context (%namespace-apply-bindings
+                           context declarations
+                           :resource-limits resource-limits :position position))
+           (attributes
+             (mapcar (lambda (entry)
+                       (make-xml-attribute
+                        :name (%namespace-resolve-attribute-name
+                               (car entry) child-context
+                               :resource-limits resource-limits
+                               :position position)
+                        :value (cdr entry)))
+                     ordinary)))
+      (%namespace-check-unique-attributes attributes :position position)
+      (values attributes declarations child-context))))
