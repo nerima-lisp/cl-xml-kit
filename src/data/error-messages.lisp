@@ -47,8 +47,6 @@
        "CONTEXT must be an XML-NAMESPACE-CONTEXT value.")
       (:namespace-binding-required
        "A namespace declaration must be an XML-NAMESPACE-BINDING.")
-      (:attribute-required "An attribute must be an XML-ATTRIBUTE value.")
-      (:attribute-name-required "An attribute name must be an XML-NAME value.")
       (:attribute-entry-invalid "An attribute entry must be a (NAME . VALUE) pair.")
       (:stream-required "STREAM must be a character stream.")
       ;; Input
@@ -77,7 +75,6 @@
       (:lt-in-attribute-value "A '<' is not allowed in an attribute value.")
       (:cdata-end-in-text "The character sequence ]]> is not allowed in text.")
       (:unterminated-comment "Unterminated XML comment.")
-      (:comment-ends-with-hyphen "An XML comment must not end with a hyphen.")
       (:double-hyphen-in-comment "XML comments must not contain '--'.")
       (:unterminated-cdata "Unterminated CDATA section.")
       (:pi-needs-target "A processing instruction needs a target.")
@@ -89,7 +86,6 @@
       (:system-needs-literal "SYSTEM identifiers need a quoted system literal.")
       (:public-needs-public-literal "PUBLIC identifiers need a quoted public literal.")
       (:public-needs-system-literal "PUBLIC identifiers need a quoted system literal.")
-      (:unterminated-internal-subset "Unterminated DOCTYPE internal subset.")
       (:unexpected-doctype-content "Unexpected content in DOCTYPE declaration.")
       (:unterminated-doctype "Unterminated DOCTYPE declaration.")
       (:unmatched-bracket-in-doctype "Unmatched ']' in DOCTYPE.")
@@ -134,9 +130,7 @@
       (:external-entity-disabled "External ~A entity ~A is disabled.")
       (:entity-reference-needs-semicolon
        "An entity reference must end with a semicolon.")
-      (:character-reference-empty "An XML character reference is empty.")
       (:malformed-character-reference "Malformed XML character reference.")
-      (:character-reference-no-digits "An XML character reference has no digits.")
       (:character-reference-illegal
        "XML character reference names an illegal character.")
       (:entity-value-malformed-reference
@@ -166,16 +160,10 @@
       (:conditional-section-unsupported
        "Conditional sections are not supported in the internal subset.")
       ;; Parser
-      (:doctype-needs-root-name "DOCTYPE needs a root name.")
       (:external-dtd-disabled "External DTD resolution is disabled.")
       (:single-doctype "Only one DOCTYPE is allowed.")
-      (:expected-quoted-attribute-value "Expected a quoted attribute value.")
-      (:unexpected-token-in-start-tag "Unexpected token in a start tag.")
       (:end-tag-mismatch "End tag does not match its start tag.")
-      (:expected-close-after-end-tag "Expected '>' after an end tag.")
       (:xml-target-reserved "The XML target is reserved.")
-      (:expected-element-name "Expected an element name.")
-      (:expected-end-tag-name "Expected an end-tag name.")
       (:entity-closes-outside-fragment
        "An entity replacement cannot close an element outside its fragment.")
       (:unexpected-end-of-document "Unexpected end of document.")
@@ -198,7 +186,6 @@
       (:cdata-outside-root "CDATA is outside the root.")
       (:doctype-after-root "DOCTYPE must appear before the root element.")
       (:single-root "A document has one root element.")
-      (:expected-root-name "Expected a root element name.")
       (:root-doctype-mismatch "The document root does not match DOCTYPE.")
       (:end-tag-without-element "An end tag has no open element.")
       (:root-required "A document needs a root element.")
@@ -211,8 +198,6 @@
       (:xmlns-prefix-reserved "The xmlns prefix is reserved.")
       (:xml-prefix-reserved-uri "The xml prefix has a reserved namespace URI.")
       (:xmlns-uri-reserved "The xmlns namespace URI is reserved.")
-      (:serialized-name-invalid "A serialized name must be an XML name.")
-      (:serialized-local-name-invalid "A serialized local name is invalid.")
       (:serialized-prefix-invalid "A serialized prefix is invalid.")
       (:xml-prefix-needs-reserved-uri "The xml prefix must use its reserved URI.")
       (:xmlns-prefix-names-node "The xmlns prefix cannot name an XML node.")
@@ -232,7 +217,6 @@
       (:comment-not-representable "Comment data is not representable in XML.")
       (:pi-target-xml-reserved "Processing-instruction target XML is reserved.")
       (:pi-data-contains-close "Processing-instruction data contains ?>.")
-      (:node-not-serializable "Object is not a serializable XML node.")
       (:object-not-serializable "OBJECT is not a serializable XML node.")
       ;; Paths and edits
       (:path-syntax "Malformed path at index ~D: expected ~A.")
