@@ -228,12 +228,6 @@
                        (or (%namespace-binding-uri context nil) ""))))
           (make-xml-name :local-name local-name :namespace-uri uri)))))
 
-(defun %namespace-resolve-element-name
-    (lexical-name context &key resource-limits position)
-  (%namespace-resolve-qname lexical-name context
-                             :resource-limits resource-limits
-                             :position position))
-
 (defun %namespace-resolve-attribute-name
     (lexical-name context &key resource-limits position)
   (%namespace-resolve-qname lexical-name context :attribute-p t

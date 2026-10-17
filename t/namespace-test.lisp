@@ -14,8 +14,7 @@
                  context
                  (list (make-xml-namespace-binding
                         :namespace-uri "urn:example"))))
-         (element-name (cl-xml-kit::%namespace-resolve-element-name
-                        "item" child))
+         (element-name (cl-xml-kit::%namespace-resolve-qname "item" child))
          (attribute-name (cl-xml-kit::%namespace-resolve-attribute-name
                           "id" child)))
     (expect (xml-name-namespace-uri element-name) :to-equal "urn:example")
@@ -30,8 +29,8 @@
                  root
                  (list (make-xml-namespace-binding
                         :prefix "p" :namespace-uri "urn:two"))))
-         (root-name (cl-xml-kit::%namespace-resolve-element-name "p:item" root))
-         (child-name (cl-xml-kit::%namespace-resolve-element-name "p:item" child)))
+         (root-name (cl-xml-kit::%namespace-resolve-qname "p:item" root))
+         (child-name (cl-xml-kit::%namespace-resolve-qname "p:item" child)))
     (expect (xml-name-namespace-uri root-name) :to-equal "urn:one")
     (expect (xml-name-namespace-uri child-name) :to-equal "urn:two")))
 
@@ -44,14 +43,14 @@
          (unbound (cl-xml-kit::%namespace-apply-bindings
                    bound
                    (list (make-xml-namespace-binding :namespace-uri ""))))
-         (name (cl-xml-kit::%namespace-resolve-element-name "item" unbound)))
+         (name (cl-xml-kit::%namespace-resolve-qname "item" unbound)))
     (expect (xml-name-namespace-uri name) :to-equal "")))
 
 (it "enforces reserved and undeclared prefixes"
   (let ((context (cl-xml-kit::make-xml-namespace-context)))
     (expect (namespace-error-p
              (lambda ()
-               (cl-xml-kit::%namespace-resolve-element-name "p:item" context)))
+               (cl-xml-kit::%namespace-resolve-qname "p:item" context)))
             :to-equal t)
     (expect (namespace-error-p
              (lambda ()
@@ -74,14 +73,14 @@
             :to-equal t)
     (expect (namespace-error-p
              (lambda ()
-               (cl-xml-kit::%namespace-resolve-element-name "xmlns:item" context)))
+               (cl-xml-kit::%namespace-resolve-qname "xmlns:item" context)))
             :to-equal t)))
 
 (it "rejects malformed qualified names and duplicate declarations"
   (let ((context (cl-xml-kit::make-xml-namespace-context)))
     (expect (namespace-error-p
              (lambda ()
-               (cl-xml-kit::%namespace-resolve-element-name "a:b:c" context)))
+               (cl-xml-kit::%namespace-resolve-qname "a:b:c" context)))
             :to-equal t)
     (expect (namespace-error-p
              (lambda ()
@@ -129,7 +128,7 @@
                       attributes)
               :to-equal (list "id" "class"))
       (expect (xml-name-namespace-uri
-               (cl-xml-kit::%namespace-resolve-element-name "a:item" child))
+               (cl-xml-kit::%namespace-resolve-qname "a:item" child))
               :to-equal "urn:a"))))
 
 (it "enforces namespace resource limits before scope construction"
