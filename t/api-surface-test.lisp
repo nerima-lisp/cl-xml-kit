@@ -150,3 +150,6 @@
                  (xml-namespace-error () t))
             :to-equal t)))
 
+
+(it "loads the public CL-XML-KIT package"
+  (expect (not (null (find-package "CL-XML-KIT"))) :to-equal t))

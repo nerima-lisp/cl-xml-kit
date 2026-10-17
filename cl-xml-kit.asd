@@ -77,7 +77,8 @@
   :pathname "t"
   :serial t
   :components ((:file "package")
-               (:file "runner")
+               (:file "helpers-matchers")
+               (:file "helpers-mutation")
                (:file "api-surface-test")
                (:file "conditions-test")
                (:file "resource-limits-test")
@@ -100,7 +101,8 @@
                (:file "format-test")
                (:file "property-test")
                (:file "fuzz-test")
-               (:file "xml-conformance-test"))
+               (:file "xml-conformance-test")
+               (:file "suite"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (unless (funcall (symbol-function
