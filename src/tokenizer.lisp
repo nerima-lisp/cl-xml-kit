@@ -1,38 +1,20 @@
 (in-package #:cl-xml-kit)
 
-(defparameter +xml-token-kinds+
-  '(:text :name :quoted-value :entity-reference :comment :cdata
-    :processing-instruction :doctype :start-tag-open :end-tag-open
-    :tag-close :empty-element-close :equals :eof)
-  "Allowed XML token kinds and their W3 consumer contract.
-
-TEXT is a contiguous character-data run. NAME is one XML Name. QUOTED-VALUE
-is the content of one attribute value with its surrounding quote removed;
-entity references in it remain lexical (for example, \"a &amp; b\").
-ENTITY-REFERENCE is the content between `&` and `;` (for example, \"amp\"
-or \"#x26\"). COMMENT, CDATA, PROCESSING-INSTRUCTION, and DOCTYPE are the
-contents of their corresponding XML delimiters removed. A processing
-instruction value therefore contains its target and data, while a doctype
-value contains the declaration body after `<!DOCTYPE` (including its
-internal subset when present). START-TAG-OPEN, END-TAG-OPEN, TAG-CLOSE,
-EMPTY-ELEMENT-CLOSE, EQUALS, and EOF have NIL values. Token positions are the
-zero-based normalized input offset and one-based line and column at the first
-character of the lexical construct. EOF is returned once at the final
-position; subsequent calls return NIL.")
-
-(defstruct (xml-token
-            (:constructor %make-xml-token (kind value position end))
-            (:conc-name %xml-token-)
-            (:copier nil)
-            (:predicate xml-token-p))
-  "An immutable lexical token with its source position.
+(define-immutable-record xml-token
+    (:constructor %make-xml-token
+     :conc-name %xml-token-
+     :predicate xml-token-p
+     :predicate-doc "Return true when VALUE is an XML token."
+     :structure-doc "An immutable lexical token with its source position.
 
 END is the exclusive normalized offset after the lexeme, or NIL when the token
-was built without one."
-  (kind nil :read-only t)
-  (value nil :read-only t)
-  (position nil :read-only t)
-  (end nil :read-only t))
+was built without one.")
+  ((kind nil xml-token-kind "Return a token's lexical kind." :identity)
+   (value nil xml-token-value "Return a fresh copy of a token's lexical value, or NIL."
+          :copy-seq)
+   (position nil xml-token-position "Return a token's source position, or NIL." :identity)
+   (end nil xml-token-end "Return a token's exclusive normalized end offset, or NIL."
+        :identity)))
 
 (defun make-xml-token (&key kind value position end)
   "Return an XML token using the kind-specific value representation.
@@ -40,42 +22,20 @@ was built without one."
 The string-valued kinds contain delimiter-free lexical text as documented by
 `+XML-TOKEN-KINDS+`; punctuation kinds and EOF require NIL. END, when
 supplied, is the exclusive normalized offset after the lexeme."
-  (unless (member kind +xml-token-kinds+)
-    (error 'xml-input-error
-           :message (format nil "Unknown XML token kind ~S." kind)))
-  (if (member kind '(:text :name :quoted-value :entity-reference :comment
-                     :cdata :processing-instruction :doctype))
-      (unless (stringp value)
-        (error 'xml-input-error
-               :message (format nil "XML token kind ~S requires a string value."
-                                kind)))
-      (when value
-        (error 'xml-input-error
-               :message (format nil "XML token kind ~S requires a NIL value."
-                                kind))))
+  (let ((spec (assoc kind +xml-token-kinds+)))
+    (unless spec
+      (xml-error 'xml-input-error :unknown-token-kind :format-arguments (kind)))
+    (if (eq (second spec) :string)
+        (unless (stringp value)
+          (xml-error 'xml-input-error :token-kind-needs-string :format-arguments (kind)))
+        (when value
+          (xml-error 'xml-input-error :token-kind-needs-nil :format-arguments (kind)))))
   (when (and position (not (xml-position-p position)))
-    (error 'xml-input-error
-           :message "TOKEN POSITION must be an XML-POSITION."))
+    (xml-error 'xml-input-error :label-must-be-xml-position
+               :format-arguments ("TOKEN POSITION")))
   (unless (typep end '(or null (integer 0)))
-    (error 'xml-input-error
-           :message "TOKEN END must be a non-negative integer or NIL."))
+    (xml-error 'xml-input-error :token-end-invalid))
   (%make-xml-token kind (and value (copy-seq value)) position end))
-
-(defun xml-token-kind (token)
-  "Return a token's lexical kind."
-  (%xml-token-kind token))
-
-(defun xml-token-value (token)
-  "Return a fresh copy of a token's lexical value, or NIL."
-  (and (%xml-token-value token) (copy-seq (%xml-token-value token))))
-
-(defun xml-token-position (token)
-  "Return a token's source position, or NIL."
-  (%xml-token-position token))
-
-(defun xml-token-end (token)
-  "Return a token's exclusive normalized end offset, or NIL."
-  (%xml-token-end token))
 
 (defstruct (%xml-tokenizer-state
             (:constructor %make-xml-tokenizer-state (index line column mode eof-returned))
@@ -90,7 +50,7 @@ supplied, is the exclusive normalized offset after the lexeme."
             (:constructor %make-xml-tokenizer (input source limits))
             (:conc-name %xml-tokenizer-)
             (:copier nil)
-            (:predicate xml-tokenizer-p))
+            (:predicate nil))
   "A stateful tokenizer over normalized character input.
 
 INPUT is a normalized string. SOURCE is an optional source name, LIMITS is an
@@ -102,6 +62,10 @@ advances only the private cursor."
   (limits nil :read-only t)
   (state (%make-xml-tokenizer-state 0 1 1 :content nil)))
 
+(defun xml-tokenizer-p (value)
+  "Return true when VALUE is an XML tokenizer."
+  (typep value 'xml-tokenizer))
+
 (defun make-xml-tokenizer (input &key source
                                       (limits *default-xml-resource-limits*))
   "Return a tokenizer for normalized INPUT with SOURCE and LIMITS.
@@ -109,12 +73,13 @@ advances only the private cursor."
 NEXT-XML-TOKEN returns delimiter-free lexical values and source-start
 positions according to `+XML-TOKEN-KINDS+`. The tokenizer owns a private
 cursor, so repeated calls consume the input in order."
-  (unless (stringp input)
-    (error 'xml-input-error :message "TOKENIZER INPUT must be a normalized string."))
+  (check-argument input stringp xml-input-error :tokenizer-input-invalid)
   (when (and source (not (stringp source)))
-    (error 'xml-input-error :message "TOKENIZER SOURCE must be a string or NIL."))
-  (unless (xml-resource-limits-p limits)
-    (error 'xml-input-error :message "TOKENIZER LIMITS must be XML-RESOURCE-LIMITS."))
+    (xml-error 'xml-input-error :label-must-be-string-or-nil
+               :format-arguments ("TOKENIZER SOURCE")))
+  (check-argument limits xml-resource-limits-p xml-input-error
+                  :label-must-be-resource-limits
+                  :format-arguments ("TOKENIZER LIMITS"))
   (%make-xml-tokenizer (copy-seq input) (and source (copy-seq source)) limits))
 
 (defun xml-tokenizer-input (tokenizer)
@@ -146,42 +111,12 @@ cursor, so repeated calls consume the input in order."
 
 (defun %xml-tokenizer-limit-fail (tokenizer kind value limit)
   (error 'xml-resource-limit-exceeded
-         :message (format nil "XML resource limit ~S exceeded: ~D > ~D."
-                          kind value limit)
+         :message (xml-message :resource-limit-exceeded-values kind value limit)
          :position (%xml-tokenizer-current-position tokenizer)
          :source (%xml-tokenizer-source tokenizer)
          :kind kind
          :value value
          :limit limit))
-
-(defun %xml-tokenizer-valid-char-p (character)
-  (let ((code (char-code character)))
-    (or (= code #x9) (= code #xA) (= code #xD)
-        (<= #x20 code #xD7FF)
-        (<= #xE000 code #xFFFD)
-        (<= #x10000 code #x10FFFF))))
-
-(defun %xml-tokenizer-space-p (character)
-  (member character '(#\Space #\Tab #\Newline #\Return) :test #'char=))
-
-(defun %xml-tokenizer-name-start-p (character)
-  (let ((code (char-code character)))
-    (or (char= character #\:) (char= character #\_)
-        (<= (char-code #\A) code (char-code #\Z))
-        (<= (char-code #\a) code (char-code #\z))
-        (<= #xC0 code #xD6) (<= #xD8 code #xF6)
-        (<= #xF8 code #x2FF) (<= #x370 code #x37D)
-        (<= #x37F code #x1FFF) (<= #x200C code #x200D)
-        (<= #x2070 code #x218F) (<= #x2C00 code #x2FEF)
-        (<= #x3001 code #xD7FF) (<= #xF900 code #xFDCF)
-        (<= #xFDF0 code #xFFFD) (<= #x10000 code #xEFFFF))))
-
-(defun %xml-tokenizer-name-char-p (character)
-  (let ((code (char-code character)))
-    (or (%xml-tokenizer-name-start-p character)
-        (char= character #\-) (char= character #\.)
-        (<= (char-code #\0) code (char-code #\9))
-        (= code #xB7) (<= #x300 code #x36F) (<= #x203F code #x2040))))
 
 (defun %xml-tokenizer-starts-with-p (tokenizer string)
   (let* ((input (%xml-tokenizer-input tokenizer))
@@ -196,10 +131,9 @@ cursor, so repeated calls consume the input in order."
          (state (%xml-tokenizer-state tokenizer))
          (index (%xml-tokenizer-state-index state))
          (character (char input index)))
-    (unless (%xml-tokenizer-valid-char-p character)
+    (unless (xml-char-p character)
       (%xml-tokenizer-fail tokenizer
-                           (format nil "Character U+~4,'0X is not legal XML character."
-                                   (char-code character))
+                           (xml-message :illegal-character (char-code character))
                            :constraint :legal-character))
     (incf (%xml-tokenizer-state-index state))
     (if (char= character #\Newline)
@@ -216,8 +150,7 @@ cursor, so repeated calls consume the input in order."
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer)))
     (loop while (and (< (%xml-tokenizer-state-index state) (length input))
-                     (%xml-tokenizer-space-p
-                      (char input (%xml-tokenizer-state-index state))))
+                     (xml-space-char-p (char input (%xml-tokenizer-state-index state))))
           do (%xml-tokenizer-advance tokenizer))))
 
 (defun %xml-tokenizer-token (tokenizer kind value position)
@@ -243,12 +176,11 @@ cursor, so repeated calls consume the input in order."
          (start (%xml-tokenizer-state-index state))
          (position (%xml-tokenizer-current-position tokenizer)))
     (unless (and (< start (length input))
-                 (%xml-tokenizer-name-start-p (char input start)))
-      (%xml-tokenizer-fail tokenizer "Expected an XML Name." :expected :name))
+                 (xml-name-start-char-p (char input start)))
+      (%xml-tokenizer-fail tokenizer (xml-message :expected-name) :expected :name))
     (%xml-tokenizer-advance tokenizer)
     (loop while (and (< (%xml-tokenizer-state-index state) (length input))
-                     (%xml-tokenizer-name-char-p
-                      (char input (%xml-tokenizer-state-index state))))
+                     (xml-name-char-p (char input (%xml-tokenizer-state-index state))))
           do (%xml-tokenizer-advance tokenizer))
     (let ((value (subseq input start (%xml-tokenizer-state-index state))))
       (%xml-tokenizer-check-name-limit tokenizer (length value))
@@ -256,7 +188,7 @@ cursor, so repeated calls consume the input in order."
 
 (defun %xml-tokenizer-validate-entity-body (tokenizer body)
   (when (zerop (length body))
-    (%xml-tokenizer-fail tokenizer "An entity reference must not be empty."
+    (%xml-tokenizer-fail tokenizer (xml-message :empty-entity-reference)
                          :constraint :entity-reference))
   (if (char= (char body 0) #\#)
       (let* ((hexadecimal (and (> (length body) 1)
@@ -267,21 +199,20 @@ cursor, so repeated calls consume the input in order."
                   (loop for index from digit-start below (length body)
                         thereis (not (xml-digit-weight (char body index) radix))))
           (%xml-tokenizer-fail tokenizer
-                               "Malformed numeric character reference."
+                               (xml-message :malformed-numeric-reference)
                                :constraint :character-reference))
         (let ((code (parse-integer body :start digit-start :radix radix)))
-          (unless (and (<= 0 code) (<= code #x10FFFF)
-                       (%xml-tokenizer-valid-char-p (code-char code)))
+          (unless (and (<= 0 code) (< code char-code-limit) (xml-char-p (code-char code)))
             (%xml-tokenizer-fail tokenizer
-                                 "Numeric character reference names an illegal XML character."
+                                 (xml-message :numeric-reference-illegal)
                                  :constraint :character-reference))))
       (progn
-        (unless (%xml-tokenizer-name-start-p (char body 0))
-          (%xml-tokenizer-fail tokenizer "Malformed entity reference."
+        (unless (xml-name-start-char-p (char body 0))
+          (%xml-tokenizer-fail tokenizer (xml-message :malformed-entity-reference)
                                :constraint :entity-reference))
         (loop for index from 1 below (length body)
-              unless (%xml-tokenizer-name-char-p (char body index))
-                do (%xml-tokenizer-fail tokenizer "Malformed entity reference."
+              unless (xml-name-char-p (char body index))
+                do (%xml-tokenizer-fail tokenizer (xml-message :malformed-entity-reference)
                                         :constraint :entity-reference))
         (%xml-tokenizer-check-name-limit tokenizer (length body)))))
 
@@ -297,7 +228,7 @@ cursor, so repeated calls consume the input in order."
             do (%xml-tokenizer-advance tokenizer))
       (when (or (= (%xml-tokenizer-state-index state) (length input))
                 (not (char= (char input (%xml-tokenizer-state-index state)) #\;)))
-        (%xml-tokenizer-fail tokenizer "Unterminated entity reference."
+        (%xml-tokenizer-fail tokenizer (xml-message :unterminated-entity-reference)
                              :constraint :entity-reference :expected #\;))
       (let ((body (subseq input start (%xml-tokenizer-state-index state))))
         (%xml-tokenizer-validate-entity-body tokenizer body)
@@ -313,7 +244,7 @@ cursor, so repeated calls consume the input in order."
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
         (when (= (%xml-tokenizer-state-index state) (length input))
-          (%xml-tokenizer-fail tokenizer "Unterminated quoted attribute value."
+          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-attribute-value)
                                :constraint :attribute-value :expected quote))
         (let ((character (char input (%xml-tokenizer-state-index state))))
           (cond
@@ -323,7 +254,7 @@ cursor, so repeated calls consume the input in order."
                (return (values (subseq input start end) position))))
             ((char= character #\<)
              (%xml-tokenizer-fail tokenizer
-                                  "A '<' is not allowed in an attribute value."
+                                  (xml-message :lt-in-attribute-value)
                                   :constraint :attribute-value))
             ((char= character #\&)
              (%xml-tokenizer-scan-entity tokenizer))
@@ -340,7 +271,7 @@ cursor, so repeated calls consume the input in order."
           do (%xml-tokenizer-advance tokenizer))
     (let ((value (subseq input start (%xml-tokenizer-state-index state))))
       (when (search "]]>" value)
-        (%xml-tokenizer-fail tokenizer "The character sequence ]]> is not allowed in text."
+        (%xml-tokenizer-fail tokenizer (xml-message :cdata-end-in-text)
                              :constraint :character-data))
       (%xml-tokenizer-check-text-limit tokenizer (length value))
       (%xml-tokenizer-token tokenizer :text value position))))
@@ -353,14 +284,14 @@ cursor, so repeated calls consume the input in order."
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
         (when (= (%xml-tokenizer-state-index state) (length input))
-          (%xml-tokenizer-fail tokenizer "Unterminated XML comment."
+          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-comment)
                                :constraint :comment :expected "-->"))
         (cond
           ((%xml-tokenizer-starts-with-p tokenizer "-->")
            (let ((end (%xml-tokenizer-state-index state)))
              (when (and (> end start) (char= (char input (1- end)) #\-))
                (%xml-tokenizer-fail tokenizer
-                                    "An XML comment must not end with a hyphen."
+                                    (xml-message :comment-ends-with-hyphen)
                                     :constraint :comment))
              (%xml-tokenizer-consume-literal tokenizer "-->")
              (setf (%xml-tokenizer-state-mode state) :content)
@@ -369,7 +300,7 @@ cursor, so repeated calls consume the input in order."
           ((and (char= (char input (%xml-tokenizer-state-index state)) #\-)
                 (< (1+ (%xml-tokenizer-state-index state)) (length input))
                 (char= (char input (1+ (%xml-tokenizer-state-index state))) #\-))
-           (%xml-tokenizer-fail tokenizer "XML comments must not contain '--'."
+           (%xml-tokenizer-fail tokenizer (xml-message :double-hyphen-in-comment)
                                 :constraint :comment))
           (t (%xml-tokenizer-advance tokenizer)))))))
 
@@ -381,7 +312,7 @@ cursor, so repeated calls consume the input in order."
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
         (when (= (%xml-tokenizer-state-index state) (length input))
-          (%xml-tokenizer-fail tokenizer "Unterminated CDATA section."
+          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-cdata)
                                :constraint :cdata :expected "]]>") )
         (if (%xml-tokenizer-starts-with-p tokenizer "]]>")
             (let ((end (%xml-tokenizer-state-index state)))
@@ -395,21 +326,21 @@ cursor, so repeated calls consume the input in order."
 (defun %xml-tokenizer-validate-pi-body (tokenizer body)
   (let ((length (length body)))
     (when (zerop length)
-      (%xml-tokenizer-fail tokenizer "A processing instruction needs a target."
+      (%xml-tokenizer-fail tokenizer (xml-message :pi-needs-target)
                            :constraint :processing-instruction))
-    (unless (%xml-tokenizer-name-start-p (char body 0))
-      (%xml-tokenizer-fail tokenizer "A processing instruction target must be an XML Name."
+    (unless (xml-name-start-char-p (char body 0))
+      (%xml-tokenizer-fail tokenizer (xml-message :pi-target-not-name)
                            :constraint :processing-instruction))
     (let ((index 1))
       (loop while (and (< index length)
-                       (%xml-tokenizer-name-char-p (char body index)))
+                       (xml-name-char-p (char body index)))
             do (incf index))
       (let ((target (subseq body 0 index)))
         (%xml-tokenizer-check-name-limit tokenizer (length target))
         (when (and (< index length)
-                   (not (%xml-tokenizer-space-p (char body index))))
+                   (not (xml-space-char-p (char body index))))
           (%xml-tokenizer-fail tokenizer
-                               "Processing-instruction target must be separated from its data."
+                               (xml-message :pi-target-not-separated)
                                :constraint :processing-instruction))))))
 
 (defun %xml-tokenizer-scan-processing-instruction (tokenizer)
@@ -420,7 +351,7 @@ cursor, so repeated calls consume the input in order."
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
         (when (= (%xml-tokenizer-state-index state) (length input))
-          (%xml-tokenizer-fail tokenizer "Unterminated processing instruction."
+          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-pi)
                                :constraint :processing-instruction :expected "?>"))
         (if (%xml-tokenizer-starts-with-p tokenizer "?>")
             (let ((end (%xml-tokenizer-state-index state)))
@@ -434,20 +365,20 @@ cursor, so repeated calls consume the input in order."
 (defun %xml-tokenizer-validate-doctype-body (tokenizer body)
   (let* ((length (length body))
          (index 0))
-    (loop while (and (< index length) (%xml-tokenizer-space-p (char body index)))
+    (loop while (and (< index length) (xml-space-char-p (char body index)))
           do (incf index))
-    (unless (and (< index length) (%xml-tokenizer-name-start-p (char body index)))
-      (%xml-tokenizer-fail tokenizer "DOCTYPE must name a root element."
+    (unless (and (< index length) (xml-name-start-char-p (char body index)))
+      (%xml-tokenizer-fail tokenizer (xml-message :doctype-needs-root-element)
                            :constraint :doctype))
     (let ((start index))
       (incf index)
       (loop while (and (< index length)
-                       (%xml-tokenizer-name-char-p (char body index)))
+                       (xml-name-char-p (char body index)))
             do (incf index))
       (%xml-tokenizer-check-name-limit tokenizer (- index start))
       (labels ((skip-space ()
                  (loop while (and (< index length)
-                                  (%xml-tokenizer-space-p (char body index)))
+                                  (xml-space-char-p (char body index)))
                        do (incf index)))
                (quoted-literal-p ()
                  (when (and (< index length)
@@ -470,17 +401,17 @@ cursor, so repeated calls consume the input in order."
            (incf index (length "SYSTEM"))
            (unless (and (progn (skip-space) t) (quoted-literal-p))
              (%xml-tokenizer-fail tokenizer
-                                  "SYSTEM identifiers need a quoted system literal."
+                                  (xml-message :system-needs-literal)
                                   :constraint :doctype)))
           ((keyword-at-p "PUBLIC")
            (incf index (length "PUBLIC"))
            (unless (progn (skip-space) (quoted-literal-p))
              (%xml-tokenizer-fail tokenizer
-                                  "PUBLIC identifiers need a quoted public literal."
+                                  (xml-message :public-needs-public-literal)
                                   :constraint :doctype))
            (unless (progn (skip-space) (quoted-literal-p))
              (%xml-tokenizer-fail tokenizer
-                                  "PUBLIC identifiers need a quoted system literal."
+                                  (xml-message :public-needs-system-literal)
                                   :constraint :doctype))))
         (skip-space)
         (when (and (< index length) (char= (char body index) #\[))
@@ -497,11 +428,11 @@ cursor, so repeated calls consume the input in order."
                   ((char= character #\]) (decf subset-depth)))
                 (incf index)))
             (when (plusp subset-depth)
-              (%xml-tokenizer-fail tokenizer "Unterminated DOCTYPE internal subset."
+              (%xml-tokenizer-fail tokenizer (xml-message :unterminated-internal-subset)
                                    :constraint :doctype))))
         (skip-space)
         (unless (= index length)
-          (%xml-tokenizer-fail tokenizer "Unexpected content in DOCTYPE declaration."
+          (%xml-tokenizer-fail tokenizer (xml-message :unexpected-doctype-content)
                                :constraint :doctype))))))
 
 (defun %xml-tokenizer-scan-doctype (tokenizer)
@@ -514,7 +445,7 @@ cursor, so repeated calls consume the input in order."
           (quote nil))
       (loop
         (when (= (%xml-tokenizer-state-index state) (length input))
-          (%xml-tokenizer-fail tokenizer "Unterminated DOCTYPE declaration."
+          (%xml-tokenizer-fail tokenizer (xml-message :unterminated-doctype)
                                :constraint :doctype :expected #\>))
         (let ((character (char input (%xml-tokenizer-state-index state))))
           (cond
@@ -529,7 +460,7 @@ cursor, so repeated calls consume the input in order."
              (%xml-tokenizer-advance tokenizer))
             ((char= character #\])
              (when (zerop subset-depth)
-               (%xml-tokenizer-fail tokenizer "Unmatched ']' in DOCTYPE."
+               (%xml-tokenizer-fail tokenizer (xml-message :unmatched-bracket-in-doctype)
                                     :constraint :doctype))
              (decf subset-depth)
              (%xml-tokenizer-advance tokenizer))
@@ -596,13 +527,12 @@ cursor, so repeated calls consume the input in order."
             (char= (char input (%xml-tokenizer-state-index state)) #\>))
        (%xml-tokenizer-start-tag-close tokenizer :tag-close 1))
       ((and (< (%xml-tokenizer-state-index state) (length input))
-            (%xml-tokenizer-name-start-p
-             (char input (%xml-tokenizer-state-index state))))
+            (xml-name-start-char-p (char input (%xml-tokenizer-state-index state))))
        (multiple-value-bind (value position) (%xml-tokenizer-scan-name tokenizer)
          (setf (%xml-tokenizer-state-mode state) :start-after-attribute-name)
          (%xml-tokenizer-token tokenizer :name value position)))
       (t (%xml-tokenizer-fail tokenizer
-                              "Expected an attribute name or tag close."
+                              (xml-message :expected-attribute-or-close)
                               :constraint :start-tag)))))
 
 (defun %xml-tokenizer-next-start-after-attribute-name (tokenizer)
@@ -617,7 +547,7 @@ cursor, so repeated calls consume the input in order."
             (setf (%xml-tokenizer-state-mode state) :start-after-equals)
             (%xml-tokenizer-token tokenizer :equals nil position)))
         (%xml-tokenizer-fail tokenizer
-                             "Expected '=' after an attribute name."
+                             (xml-message :expected-equals-after-attribute)
                              :constraint :attribute))))
 
 (defun %xml-tokenizer-next-start-after-equals (tokenizer)
@@ -632,7 +562,7 @@ cursor, so repeated calls consume the input in order."
           (multiple-value-bind (value position) (%xml-tokenizer-scan-quoted-value tokenizer)
             (%xml-tokenizer-token tokenizer :quoted-value value position)))
         (%xml-tokenizer-fail tokenizer
-                             "Expected a quoted attribute value after '='."
+                             (xml-message :expected-quoted-value-after-equals)
                              :constraint :attribute-value))))
 
 (defun %xml-tokenizer-next-start-after-quote (tokenizer)
@@ -647,17 +577,16 @@ cursor, so repeated calls consume the input in order."
               (char= (char input (%xml-tokenizer-state-index state)) #\>))
          (%xml-tokenizer-start-tag-close tokenizer :tag-close 1))
         ((and (< (%xml-tokenizer-state-index state) (length input))
-              (%xml-tokenizer-name-start-p
-               (char input (%xml-tokenizer-state-index state))))
+              (xml-name-start-char-p (char input (%xml-tokenizer-state-index state))))
          (if (= before (%xml-tokenizer-state-index state))
              (%xml-tokenizer-fail tokenizer
-                                  "Attributes must be separated by XML whitespace."
+                                  (xml-message :attributes-need-whitespace)
                                   :constraint :start-tag)
              (multiple-value-bind (value position) (%xml-tokenizer-scan-name tokenizer)
                (setf (%xml-tokenizer-state-mode state) :start-after-attribute-name)
                (%xml-tokenizer-token tokenizer :name value position))))
         (t (%xml-tokenizer-fail tokenizer
-                                "Expected another attribute or tag close."
+                                (xml-message :expected-another-attribute-or-close)
                                 :constraint :start-tag))))))
 
 (defun %xml-tokenizer-next-end-tag (tokenizer)
@@ -673,7 +602,7 @@ cursor, so repeated calls consume the input in order."
              (char= (char input (%xml-tokenizer-state-index state)) #\>))
         (%xml-tokenizer-start-tag-close tokenizer :tag-close 1)
         (%xml-tokenizer-fail tokenizer
-                             "Expected '>' after an end-tag name."
+                             (xml-message :expected-close-after-end-tag-name)
                              :constraint :end-tag))))
 
 (defun next-xml-token (tokenizer)
@@ -684,8 +613,7 @@ Malformed XML signals XML-WELL-FORMEDNESS-ERROR with the current source
 position; configured name and text-node bounds signal
 XML-RESOURCE-LIMIT-EXCEEDED. Every successful branch consumes input or
 returns EOF, so malformed input cannot leave a zero-progress loop."
-  (unless (xml-tokenizer-p tokenizer)
-    (error 'xml-input-error :message "TOKENIZER must be an XML-TOKENIZER."))
+  (check-argument tokenizer xml-tokenizer-p xml-input-error :tokenizer-required)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer)))
     (when (%xml-tokenizer-state-eof-returned state)
@@ -693,7 +621,7 @@ returns EOF, so malformed input cannot leave a zero-progress loop."
     (loop
       (when (= (%xml-tokenizer-state-index state) (length input))
         (unless (eq (%xml-tokenizer-state-mode state) :content)
-          (%xml-tokenizer-fail tokenizer "Unexpected end of XML input."
+          (%xml-tokenizer-fail tokenizer (xml-message :unexpected-end-of-input)
                                :constraint :well-formedness))
         (setf (%xml-tokenizer-state-eof-returned state) t)
         (return (%xml-tokenizer-token tokenizer :eof nil
@@ -711,16 +639,6 @@ returns EOF, so malformed input cannot leave a zero-progress loop."
           (:end-tag (%xml-tokenizer-next-end-tag tokenizer))
           (:end-after-name (%xml-tokenizer-next-end-after-name tokenizer))
           (otherwise
-           (%xml-tokenizer-fail tokenizer "Unknown tokenizer state."
+           (%xml-tokenizer-fail tokenizer (xml-message :unknown-tokenizer-state)
                                 :constraint :tokenizer-state)))))))
-
-(loop for (name . text) in
-      '((xml-token-p . "Return true when VALUE is an XML token.")
-        (xml-tokenizer-p . "Return true when VALUE is an XML tokenizer.")
-        (xml-tokenizer-input . "Return a fresh copy of normalized tokenizer input.")
-        (xml-tokenizer-source . "Return a tokenizer's source name, or NIL.")
-        (xml-tokenizer-limits . "Return a tokenizer's resource limits.")
-        (next-xml-token . "Return the next XML token, then NIL after one-shot EOF.")
-        (make-xml-tokenizer . "Return a stateful tokenizer for normalized XML input."))
-      do (setf (documentation name 'function) text))
 

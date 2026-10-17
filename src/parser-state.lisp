@@ -62,7 +62,7 @@
 
 (defun %parser-limit-error (parser kind value limit &optional position)
   (error 'xml-resource-limit-exceeded
-         :message (format nil "XML resource limit ~S exceeded." kind)
+         :message (xml-message :resource-limit-exceeded kind)
          :kind kind :value value :limit limit
          :source (xml-parser-source-name parser)
          :position (or position (%parser-current-position parser))))
@@ -71,11 +71,6 @@
                                       &optional position)
   (error 'xml-well-formedness-error
          :message message :constraint constraint :expected expected
-         :source (xml-parser-source-name parser)
-         :position (or position (%parser-current-position parser))))
-
-(defun %parser-input-error (parser message &optional position)
-  (error 'xml-input-error :message message
          :source (xml-parser-source-name parser)
          :position (or position (%parser-current-position parser))))
 

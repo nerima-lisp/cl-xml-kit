@@ -56,3 +56,10 @@
       (expect (xml-invalid-resource-limit-kind condition) :to-equal (car entry))
       (expect (xml-invalid-resource-limit-value condition) :to-equal (cdr entry)))))
 
+
+(it "names the invalid limit and value in the condition message"
+  (let ((condition nil))
+    (handler-case (make-xml-resource-limits :max-depth 0)
+      (xml-invalid-resource-limit (caught) (setf condition caught)))
+    (expect (xml-condition-message condition)
+            :to-equal "Resource limit :MAX-DEPTH must be a positive integer, not 0.")))

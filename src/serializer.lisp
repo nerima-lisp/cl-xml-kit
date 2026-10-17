@@ -12,27 +12,18 @@
   (output-count 0)
   (generated-prefix-index 0))
 
-(defun %serializer-error (object path control &rest arguments)
+(defun %serializer-error (object path message)
   (error 'xml-serialization-error
-         :message (apply #'format nil control arguments)
+         :message message
          :object object
          :path path))
 
-(defun %valid-xml-character-p (character)
-  (let ((code (char-code character)))
-    (or (= code #x9)
-        (= code #xA)
-        (= code #xD)
-        (<= #x20 code #xD7FF)
-        (<= #xE000 code #xFFFD)
-        (<= #x10000 code #x10FFFF))))
-
 (defun %check-xml-characters (string object path)
   (loop for character across string
-        unless (%valid-xml-character-p character)
+        unless (xml-char-p character)
           do (%serializer-error object path
-                                "Character U+~4,'0X cannot be represented in XML."
-                                (char-code character))))
+                                (xml-message :character-not-representable
+                                             (char-code character)))))
 
 (defun %serializer-write (state string object path)
   (%check-xml-characters string object path)
@@ -41,9 +32,9 @@
          (limit (xml-resource-limits-max-output-characters
                  (xml-serializer-state-resource-limits state))))
     (when (> new-count limit)
-      (error 'xml-resource-limit-exceeded
-             :message "The serialized output exceeds the configured limit."
-             :kind :max-output-characters :value new-count :limit limit))
+      (xml-error 'xml-resource-limit-exceeded :output-limit-exceeded
+                 :condition-initargs (:kind :max-output-characters
+                                      :value new-count :limit limit)))
     (write-string string (xml-serializer-state-stream state))
     (setf (xml-serializer-state-output-count state) new-count)))
 
@@ -96,29 +87,29 @@
 
 (defun %validate-binding (binding object path)
   (unless (xml-namespace-binding-p binding)
-    (%serializer-error object path "Namespace declarations must be XML namespace bindings."))
+    (%serializer-error object path (xml-message :declarations-must-be-bindings)))
   (let ((prefix (xml-namespace-binding-prefix binding))
         (uri (xml-namespace-binding-namespace-uri binding)))
     (when (and prefix (string= prefix "xmlns"))
-      (%serializer-error object path "The xmlns prefix is reserved."))
+      (%serializer-error object path (xml-message :xmlns-prefix-reserved)))
     (when (and prefix (string= prefix "xml")
                (not (string= uri +xml-namespace-uri+)))
-      (%serializer-error object path "The xml prefix has a reserved namespace URI."))
+      (%serializer-error object path (xml-message :xml-prefix-reserved-uri)))
     (when (and (string= uri +xmlns-namespace-uri+)
                (not (and prefix (string= prefix "xmlns"))))
-      (%serializer-error object path "The xmlns namespace URI is reserved."))
+      (%serializer-error object path (xml-message :xmlns-uri-reserved)))
     (values prefix uri)))
 
 (defun %name-components (name object path)
   (unless (xml-name-p name)
-    (%serializer-error object path "A serialized name must be an XML name."))
+    (%serializer-error object path (xml-message :serialized-name-invalid)))
   (let ((local-name (xml-name-local-name name))
         (namespace-uri (xml-name-namespace-uri name))
         (prefix (xml-name-prefix name)))
     (when (or (zerop (length local-name)) (find #\: local-name))
-      (%serializer-error object path "A serialized local name is invalid."))
+      (%serializer-error object path (xml-message :serialized-local-name-invalid)))
     (when (and prefix (or (zerop (length prefix)) (find #\: prefix)))
-      (%serializer-error object path "A serialized prefix is invalid."))
+      (%serializer-error object path (xml-message :serialized-prefix-invalid)))
     (values local-name namespace-uri prefix)))
 
 (defun %generated-prefix (state bindings)
@@ -176,15 +167,15 @@
 (defun %required-binding (prefix uri scope declarations object path)
   (when (and prefix (string= prefix "xml"))
     (unless (string= uri +xml-namespace-uri+)
-      (%serializer-error object path "The xml prefix must use its reserved URI.")))
+      (%serializer-error object path (xml-message :xml-prefix-needs-reserved-uri))))
   (when (and prefix (string= prefix "xmlns"))
-    (%serializer-error object path "The xmlns prefix cannot name an XML node."))
+    (%serializer-error object path (xml-message :xmlns-prefix-names-node)))
   (cond
     ((%same-uri-p prefix uri scope)
      (values scope declarations))
     ((%binding prefix declarations)
      (%serializer-error object path
-                        "A namespace declaration conflicts with a node name."))
+                        (xml-message :declaration-conflicts-with-name)))
     (t
      (let ((binding (make-xml-namespace-binding :prefix prefix :namespace-uri uri)))
        (values (%put-binding prefix uri scope)
@@ -229,9 +220,9 @@
     (multiple-value-setq (local-name namespace-uri prefix)
       (%name-components name object element-path))
     (unless (every #'xml-attribute-p attributes)
-      (%serializer-error object element-path "Element attributes must be XML attributes."))
+      (%serializer-error object element-path (xml-message :element-attributes-invalid)))
     (unless (every #'xml-node-p children)
-      (%serializer-error object element-path "Element children must be XML nodes."))
+      (%serializer-error object element-path (xml-message :element-children-invalid)))
     (let ((current-scope scope)
           (declarations nil)
           (attribute-prefixes nil)
@@ -242,11 +233,12 @@
             (%validate-binding binding object element-path)
           (when (member binding-prefix seen-declaration-prefixes :test #'equal)
             (%serializer-error object element-path
-                               "An element cannot repeat a namespace declaration."))
+                               (xml-message :repeated-namespace-declaration)))
           (push binding-prefix seen-declaration-prefixes)
           (when (and (string= binding-uri +xml-namespace-uri+)
                      (not (and binding-prefix (string= binding-prefix "xml"))))
-            (%serializer-error object element-path "Only xml may bind the XML namespace."))
+            (%serializer-error object element-path
+                               (xml-message :only-xml-binds-xml-namespace)))
           (unless (%same-uri-p binding-prefix binding-uri current-scope)
             (push binding declarations)
             (setf current-scope (%put-binding binding-prefix binding-uri current-scope)))))
@@ -269,11 +261,11 @@
           (when (and (null attribute-prefix)
                      (string-equal attribute-local "xmlns"))
             (%serializer-error attribute attribute-path
-                               "The xmlns attribute is reserved for namespace declarations."))
+                               (xml-message :xmlns-attribute-reserved)))
           (let ((expanded-name (cons attribute-uri attribute-local)))
             (when (member expanded-name seen-attribute-names :test #'equal)
               (%serializer-error attribute attribute-path
-                                 "An element cannot repeat an expanded attribute name."))
+                                 (xml-message :repeated-expanded-attribute)))
             (push expanded-name seen-attribute-names))
           (when (and (null attribute-prefix) (plusp (length attribute-uri)))
             (setf attribute-prefix (%generated-prefix state current-scope))
@@ -283,7 +275,7 @@
           (when attribute-prefix
             (when (zerop (length attribute-uri))
               (%serializer-error attribute attribute-path
-                                 "A prefixed attribute must have a namespace URI."))
+                                 (xml-message :prefixed-attribute-needs-uri)))
             (multiple-value-setq (current-scope declarations)
               (%required-binding attribute-prefix attribute-uri current-scope
                                  declarations attribute attribute-path)))
@@ -375,11 +367,11 @@
     ((xml-document-p object)
      (let ((children (xml-document-children object)))
        (unless (every #'xml-node-p children)
-         (%serializer-error object path "Document children must be XML nodes."))
+         (%serializer-error object path (xml-message :document-children-invalid)))
        (dolist (child children)
          (unless (and (xml-serializer-state-canonical state)
                       (xml-text-p child)
-                      (every #'%xml-space-p (xml-text-data child)))
+                      (every #'xml-space-char-p (xml-text-data child)))
            (%write-node state child scope level (append path (list :child)))))))
     ((xml-element-p object)
      (%write-element state object scope level path))
@@ -387,7 +379,7 @@
      (multiple-value-bind (local-name namespace-uri prefix)
          (%name-components (xml-attribute-name object) object path)
        (when (and prefix (zerop (length namespace-uri)))
-         (%serializer-error object path "A prefixed attribute must have a namespace URI."))
+         (%serializer-error object path (xml-message :prefixed-attribute-needs-uri)))
        (%write-name state local-name prefix object path)
        (%serializer-write state "=\"" object path)
        (%write-escaped-attribute state (xml-attribute-value object) object path)
@@ -401,7 +393,7 @@
        (%check-xml-characters data object path)
        (when (or (search "--" data) (and (plusp (length data))
                                          (char= (char data (1- (length data))) #\-)))
-         (%serializer-error object path "Comment data is not representable in XML."))
+         (%serializer-error object path (xml-message :comment-not-representable)))
        (%serializer-write state "<!--" object path)
        (%serializer-write state data object path)
        (%serializer-write state "-->" object path)))
@@ -410,9 +402,9 @@
            (data (xml-processing-instruction-data object)))
        (%check-xml-characters target object path)
        (when (string-equal "xml" target)
-         (%serializer-error object path "Processing-instruction target XML is reserved."))
+         (%serializer-error object path (xml-message :pi-target-xml-reserved)))
        (when (and data (search "?>" data))
-         (%serializer-error object path "Processing-instruction data contains ?>."))
+         (%serializer-error object path (xml-message :pi-data-contains-close)))
        (%serializer-write state "<?" object path)
        (%serializer-write state target object path)
        (when (or data (xml-serializer-state-canonical state))
@@ -424,15 +416,17 @@
     ((xml-doctype-p object)
      (%write-doctype state object path))
     (t
-     (%serializer-error object path "Object is not a serializable XML node."))))
+     (%serializer-error object path (xml-message :node-not-serializable)))))
 
 (defun %serializer-state (stream &key pretty-print indent resource-limits canonical)
   (unless (streamp stream)
-    (%serializer-error stream nil "STREAM must be a character stream."))
+    (%serializer-error stream nil (xml-message :stream-required)))
   (unless (xml-resource-limits-p resource-limits)
-    (%serializer-error resource-limits nil "RESOURCE-LIMITS must be XML resource limits."))
+    (%serializer-error resource-limits nil
+                       (xml-message :label-must-be-resource-limits-value
+                                    "RESOURCE-LIMITS")))
   (unless (and (integerp indent) (not (minusp indent)))
-    (%serializer-error indent nil "INDENT must be a non-negative integer."))
+    (%serializer-error indent nil (xml-message :indent-must-be-non-negative)))
   (%make-xml-serializer-state stream resource-limits pretty-print indent canonical 0 0))
 
 (defun %write-xml (object stream &key (pretty-print nil) (indent 2)
@@ -441,7 +435,7 @@
               (xml-attribute-p object) (xml-text-p object)
               (xml-comment-p object) (xml-processing-instruction-p object)
               (xml-doctype-p object))
-    (%serializer-error object nil "OBJECT is not a serializable XML node."))
+    (%serializer-error object nil (xml-message :object-not-serializable)))
   (let ((state (%serializer-state stream :pretty-print pretty-print
                                   :indent indent :resource-limits resource-limits
                                   :canonical canonical)))
@@ -471,12 +465,4 @@
   "Return OBJECT in XML Test Suite Second Canonical Form as a fresh string."
   (with-output-to-string (stream)
     (write-xml-canonical object stream :resource-limits resource-limits)))
-
-(loop for (name . text) in
-      '((write-xml . "Write an XML node to a character stream.")
-        (xml->string . "Return an XML node as a string.")
-        (write-xml-canonical . "Write an XML Test Suite canonical XML node to a character stream.")
-        (xml->canonical-string . "Return an XML Test Suite canonical XML node as a string.")
-        (xml-node-p . "Return true when OBJECT is a serializable XML node."))
-      do (setf (documentation name 'function) text))
 

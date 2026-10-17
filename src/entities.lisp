@@ -42,15 +42,17 @@
                                   (external-entity-policy :reject)
                                   source position)
   "Create parse-local entity state using RESOURCE-LIMITS and POLICY."
-  (unless (xml-resource-limits-p resource-limits)
-    (error 'xml-input-error :message "RESOURCE-LIMITS must be XML resource limits."))
+  (check-argument resource-limits xml-resource-limits-p xml-input-error
+                  :label-must-be-resource-limits-value
+                  :format-arguments ("RESOURCE-LIMITS"))
   (unless (member external-entity-policy '(:reject :skip))
-    (error 'xml-input-error
-           :message "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP."))
+    (xml-error 'xml-input-error :external-entity-policy-invalid))
   (unless (or (null source) (stringp source))
-    (error 'xml-input-error :message "SOURCE must be a string or NIL."))
+    (xml-error 'xml-input-error :label-must-be-string-or-nil
+               :format-arguments ("SOURCE")))
   (when (and position (not (xml-position-p position)))
-    (error 'xml-input-error :message "POSITION must be an XML-POSITION."))
+    (xml-error 'xml-input-error :label-must-be-xml-position
+               :format-arguments ("POSITION")))
   (%make-xml-entity-context (make-hash-table :test #'equal)
                             (make-hash-table :test #'equal)
                             resource-limits external-entity-policy
@@ -60,13 +62,11 @@
                                          external-p public-id system-id)
   "Create an internal entity declaration for parser-local use."
   (unless (and (stringp name) (plusp (length name)))
-    (error 'xml-input-error :message "ENTITY NAME must be a non-empty string."))
+    (xml-error 'xml-input-error :entity-name-invalid))
   (when (and (not external-p) (not (stringp replacement-text)))
-    (error 'xml-input-error
-           :message "An internal ENTITY declaration needs replacement text."))
+    (xml-error 'xml-input-error :internal-entity-needs-text))
   (when (and external-p replacement-text)
-    (error 'xml-input-error
-           :message "An external ENTITY declaration cannot have replacement text."))
+    (xml-error 'xml-input-error :external-entity-has-text))
   (%make-xml-entity-declaration (copy-seq name)
                                 (and replacement-text (copy-seq replacement-text))
                                 (not (null parameter-p)) (not (null external-p))
@@ -81,8 +81,7 @@
 
 (defun %entity-limit-error (context kind value limit)
   (error 'xml-resource-limit-exceeded
-         :message (format nil "XML entity resource limit ~S exceeded (~D > ~D)."
-                          kind value limit)
+         :message (xml-message :entity-resource-limit-exceeded kind value limit)
          :kind kind :value value :limit limit
          :source (xml-entity-context-source context)
          :position (xml-entity-context-position context)))
@@ -90,8 +89,8 @@
 (defun %external-entity-error (context declaration)
   (let ((name (xml-entity-declaration-name declaration)))
     (error 'xml-external-resource-disabled
-           :message (format nil "External ~A entity ~A is disabled."
-                            (if (xml-entity-declaration-parameter-p declaration)
+           :message (xml-message :external-entity-disabled
+                                 (if (xml-entity-declaration-parameter-p declaration)
                                 "parameter" "general") name)
            :identifier (or (xml-entity-declaration-system-id declaration) name)
            :kind (if (xml-entity-declaration-parameter-p declaration)
@@ -99,43 +98,20 @@
            :source (xml-entity-context-source context)
            :position (xml-entity-context-position context))))
 
-(defun %entity-name-start-p (character)
-  (let ((code (char-code character)))
-    (or (char= character #\:) (char= character #\_)
-        (char<= #\A character #\Z) (char<= #\a character #\z)
-        (<= #xC0 code))))
-
-(defun %entity-name-char-p (character)
-  (let ((code (char-code character)))
-    (or (%entity-name-start-p character)
-        (char<= #\0 character #\9)
-        (member character '(#\- #\.))
-        (= code #xB7) (<= #x300 code #x36F) (<= #x203F code #x2040))))
-
-(defun %xml-legal-character-p (character)
-  (let ((code (char-code character)))
-    (or (= code #x9) (= code #xA) (= code #xD)
-        (<= #x20 code #xD7FF)
-        (<= #xE000 code #xFFFD)
-        (<= #x10000 code #x10FFFF))))
-
-(defun %xml-space-p (character)
-  (member character '(#\Space #\Tab #\Newline #\Return)))
-
 (defun %skip-xml-space (text position)
   (loop while (and (< position (length text))
-                   (%xml-space-p (char text position)))
+                   (xml-space-char-p (char text position)))
         do (incf position)
         finally (return position)))
 
 (defun %entity-reference-end (text start context)
   (or (position #\; text :start start)
-      (%entity-error context "An entity reference must end with a semicolon."
+      (%entity-error context (xml-message :entity-reference-needs-semicolon)
                      :entity-reference ";")))
 
 (defun %parse-character-reference (body context)
   (when (zerop (length body))
-    (%entity-error context "An XML character reference is empty."
+    (%entity-error context (xml-message :character-reference-empty)
                    :character-reference))
   (let* ((hex-p (and (> (length body) 2)
                      (char= (char body 0) #\#)
@@ -147,25 +123,25 @@
                        (decimal-p (subseq body 1))
                        (t nil))))
     (unless digits
-      (%entity-error context "Malformed XML character reference."
+      (%entity-error context (xml-message :malformed-character-reference)
                      :character-reference))
     (when (zerop (length digits))
-      (%entity-error context "An XML character reference has no digits."
+      (%entity-error context (xml-message :character-reference-no-digits)
                      :character-reference))
     (let ((value 0)
           (radix (if hex-p 16 10)))
       (loop for character across digits
             for number = (xml-digit-weight character radix)
             do (unless number
-                 (%entity-error context "Malformed XML character reference."
+                 (%entity-error context (xml-message :malformed-character-reference)
                                 :character-reference))
                (setf value (+ (* value radix) number)))
-      (unless (<= value #x10FFFF)
-        (%entity-error context "XML character reference names an illegal character."
+      (unless (< value char-code-limit)
+        (%entity-error context (xml-message :character-reference-illegal)
                        :legal-character))
       (let ((character (code-char value)))
-        (unless (and character (%xml-legal-character-p character))
-          (%entity-error context "XML character reference names an illegal character."
+        (unless (and character (xml-char-p character))
+          (%entity-error context (xml-message :character-reference-illegal)
                          :legal-character))
         character))))
 
@@ -182,27 +158,27 @@
                      (%parse-character-reference body context)
                      (progn
                        (unless (and (> (length body) 0)
-                                    (%entity-name-start-p (char body 0)))
+                                    (xml-name-start-char-p (char body 0)))
                          (%entity-error
                           context
-                          "An entity value contains a malformed entity reference."
+                          (xml-message :entity-value-malformed-reference)
                           :entity-reference))
                        (loop for character across (subseq body 1)
-                             do (unless (%entity-name-char-p character)
+                             do (unless (xml-name-char-p character)
                                   (%entity-error
                                    context
-                                   "An entity value contains a malformed entity reference."
+                                   (xml-message :entity-value-malformed-reference)
                                    :entity-reference)))))
                  (setf position (1+ end)))))))
 
 (defun %record-expanded-character (context character stream attribute-p
                                    &optional generated-p)
   (when (and attribute-p generated-p (char= character #\<))
-    (%entity-error context "An attribute value cannot contain '<'."
+    (%entity-error context (xml-message :lt-in-attribute-replacement)
                    :no-lt-in-attribute-values "a character other than <"))
   (when (and attribute-p generated-p (char= character #\&))
     (%entity-error context
-                   "An entity replacement cannot generate '&' in an attribute value."
+                   (xml-message :amp-in-attribute-replacement)
                    :no-amp-in-attribute-values "a character other than &"))
   (let* ((limits (xml-entity-context-limits context))
          (limit (xml-resource-limits-max-expanded-characters limits))
@@ -225,7 +201,7 @@
       (%entity-limit-error context :max-entity-depth depth depth-limit))
     (when (member name (xml-entity-context-expansion-stack context)
                   :test #'string=)
-      (%entity-error context "Recursive XML entity reference."
+      (%entity-error context (xml-message :recursive-entity)
                      :no-recursion name))
     (incf (xml-entity-context-expansions context))
     (push name (xml-entity-context-expansion-stack context))))
@@ -249,18 +225,16 @@
                               (xml-entity-declaration-parameter-p declaration)))
          (name (xml-entity-declaration-name declaration)))
     (when (gethash name table)
-      (%entity-error context "Duplicate XML entity declaration."
+      (%entity-error context (xml-message :duplicate-entity)
                      :duplicate-entity-declaration name))
     (setf (gethash name table) declaration)
     declaration))
 
 (defun xml-entity-context-declare (context declaration)
   "Register DECLARATION in CONTEXT and return it."
-  (unless (xml-entity-context-p context)
-    (error 'xml-input-error :message "CONTEXT must be an XML entity context."))
-  (unless (xml-entity-declaration-p declaration)
-    (error 'xml-input-error
-           :message "DECLARATION must be an XML entity declaration."))
+  (check-argument context xml-entity-context-p xml-input-error :entity-context-required)
+  (check-argument declaration xml-entity-declaration-p xml-input-error
+                  :entity-declaration-required)
   (%declare-entity context declaration))
 
 (defun %external-entity-result (context declaration)
@@ -304,7 +278,7 @@
                                          (xml-entity-context-declarations context))))
                           (unless declaration
                             (%entity-error context
-                                           (format nil "Undeclared XML entity ~A." body)
+                                           (xml-message :undeclared-entity body)
                                            :entity-declared body))
                           (if (xml-entity-declaration-external-p declaration)
                               (%external-entity-result context declaration)
@@ -319,10 +293,9 @@
 
 (defun expand-xml-entity-references (text context &key attribute-p)
   "Expand XML general and character references in TEXT."
-  (unless (stringp text)
-    (error 'xml-input-error :message "ENTITY TEXT must be a string."))
-  (unless (xml-entity-context-p context)
-    (error 'xml-input-error :message "CONTEXT must be an XML entity context."))
+  (check-argument text stringp xml-input-error :label-must-be-string
+                  :format-arguments ("ENTITY TEXT"))
+  (check-argument context xml-entity-context-p xml-input-error :entity-context-required)
   (with-output-to-string (stream)
     (%expand-general-references-into text context stream attribute-p)))
 
@@ -356,7 +329,7 @@ the parser then validates the resulting replacement as XML content."
                            (when (char= character #\&)
                              (%entity-error
                               context
-                              "An entity replacement generated an unescaped ampersand."
+                              (xml-message :unescaped-ampersand-in-replacement)
                               :entity-reference))
                            (%record-expanded-character context character stream nil))
                          (progn
@@ -366,7 +339,7 @@ the parser then validates the resulting replacement as XML content."
                                             (xml-entity-context-declarations context))))
                              (unless declaration
                                (%entity-error
-                                context (format nil "Undeclared XML entity ~A." body)
+                                context (xml-message :undeclared-entity body)
                                 :entity-declared body))
                              (if (xml-entity-declaration-external-p declaration)
                                  (%external-entity-result context declaration)
@@ -383,12 +356,12 @@ the parser then validates the resulting replacement as XML content."
 (defun %quoted-string-end (text position context)
   (let ((quote (char text position)))
     (or (position quote text :start (1+ position))
-        (%entity-error context "Unterminated XML entity declaration."
+        (%entity-error context (xml-message :unterminated-entity-declaration)
                        :entity-declaration))))
 
 (defun %word-end (text position)
   (loop while (and (< position (length text))
-                   (not (%xml-space-p (char text position)))
+                   (not (xml-space-char-p (char text position)))
                    (char/= (char text position) #\>))
         do (incf position)
         finally (return position)))
@@ -400,12 +373,12 @@ the parser then validates the resulting replacement as XML content."
     (when (and (< position length) (char= (char text position) #\%))
       (setf parameter-p t
             position (%skip-xml-space text (1+ position))))
-    (unless (and (< position length) (%entity-name-start-p (char text position)))
-      (%entity-error context "An entity declaration needs a valid name."
+    (unless (and (< position length) (xml-name-start-char-p (char text position)))
+      (%entity-error context (xml-message :entity-declaration-needs-name)
                      :entity-declaration))
     (let ((name-start position))
       (loop while (and (< position length)
-                       (%entity-name-char-p (char text position)))
+                       (xml-name-char-p (char text position)))
             do (incf position))
       (let ((name (subseq text name-start position)))
         (%check-entity-name-length context name)
@@ -414,10 +387,10 @@ the parser then validates the resulting replacement as XML content."
           (when (= separator position)
             (%entity-error
              context
-             "An entity name must be separated from its declaration value."
+             (xml-message :entity-name-not-separated)
              :entity-declaration)))
         (when (>= position length)
-          (%entity-error context "An entity declaration is incomplete."
+          (%entity-error context (xml-message :entity-declaration-incomplete)
                          :entity-declaration))
         (cond
           ((member (char text position) '(#\" #\'))
@@ -426,7 +399,7 @@ the parser then validates the resulting replacement as XML content."
                   (after (%skip-xml-space text (1+ end))))
              (%validate-entity-value replacement context)
              (unless (and (< after length) (char= (char text after) #\>))
-               (%entity-error context "An entity declaration must end with '>'."
+               (%entity-error context (xml-message :entity-declaration-needs-close)
                               :entity-declaration))
              (values (make-xml-entity-declaration
                       :name name :replacement-text replacement
@@ -436,12 +409,12 @@ the parser then validates the resulting replacement as XML content."
            (let* ((keyword-end (%word-end text position))
                   (keyword (subseq text position keyword-end)))
              (unless (member keyword '("SYSTEM" "PUBLIC") :test #'string=)
-               (%entity-error context "An entity declaration needs a quoted value."
+               (%entity-error context (xml-message :entity-declaration-needs-value)
                               :entity-declaration))
              (setf position (%skip-xml-space text keyword-end))
              (unless (and (< position length)
                           (member (char text position) '(#\" #\')))
-               (%entity-error context "An external entity needs a system identifier."
+               (%entity-error context (xml-message :external-entity-needs-system-id)
                               :entity-declaration))
              (let* ((first-end (%quoted-string-end text position context))
                     (first-id (subseq text (1+ position) first-end))
@@ -452,7 +425,7 @@ the parser then validates the resulting replacement as XML content."
                    (progn
                      (unless (and (< after length)
                                   (member (char text after) '(#\" #\')))
-                       (%entity-error context "PUBLIC needs a system identifier."
+                       (%entity-error context (xml-message :public-needs-system-id)
                                       :entity-declaration))
                      (let ((system-end (%quoted-string-end text after context)))
                        (setf system-id (subseq text (1+ after) system-end)
@@ -461,7 +434,8 @@ the parser then validates the resulting replacement as XML content."
                (unless (and (< after length) (char= (char text after) #\>))
                  (let ((closing (position #\> text :start after)))
                    (unless closing
-                     (%entity-error context "An external entity declaration is incomplete."
+                     (%entity-error context
+                                    (xml-message :external-entity-declaration-incomplete)
                                     :entity-declaration))
                    (setf after closing)))
                (values (make-xml-entity-declaration
@@ -473,7 +447,7 @@ the parser then validates the resulting replacement as XML content."
   (let ((end (search "-->" text :start2 start)))
     (if end
         (+ end 3)
-        (%entity-error context "Unterminated XML comment in the internal subset."
+        (%entity-error context (xml-message :unterminated-subset-comment)
                        :comment))))
 
 (defun %skip-markup-declaration (text start context)
@@ -487,7 +461,7 @@ the parser then validates the resulting replacement as XML content."
                ((member character '(#\" #\')) (setf quote character))
                ((char= character #\>) (return (1+ position))))
              (incf position)
-          finally (%entity-error context "Unterminated markup declaration."
+          finally (%entity-error context (xml-message :unterminated-markup-declaration)
                                  :markup-declaration))))
 
 ;; ATTLIST declarations are otherwise skipped; the names are kept for tools that
@@ -496,13 +470,13 @@ the parser then validates the resulting replacement as XML content."
   (let ((keyword-end (+ start 9)))
     (when (and (< keyword-end (length text))
                (string= "<!ATTLIST" text :start2 start :end2 keyword-end)
-               (%xml-space-p (char text keyword-end)))
+               (xml-space-char-p (char text keyword-end)))
       (let* ((name-start (%skip-xml-space text keyword-end))
              (name-end name-start))
         (when (and (< name-start (length text))
-                   (%entity-name-start-p (char text name-start)))
+                   (xml-name-start-char-p (char text name-start)))
           (loop while (and (< name-end (length text))
-                           (%entity-name-char-p (char text name-end)))
+                           (xml-name-char-p (char text name-end)))
                 do (incf name-end))
           (pushnew (subseq text name-start name-end)
                    (xml-entity-context-attlist-element-names context)
@@ -513,8 +487,8 @@ the parser then validates the resulting replacement as XML content."
                                          (external-entity-policy :reject)
                                          source position)
   "Parse internal ENTITY declarations from SUBSET and return an entity context."
-  (unless (stringp subset)
-    (error 'xml-input-error :message "INTERNAL-SUBSET must be a string."))
+  (check-argument subset stringp xml-input-error :label-must-be-string
+                  :format-arguments ("INTERNAL-SUBSET"))
   (let ((context (make-xml-entity-context
                   :resource-limits resource-limits
                   :external-entity-policy external-entity-policy
@@ -524,7 +498,7 @@ the parser then validates the resulting replacement as XML content."
                      (index 0))
                  (loop while (< index length)
                        do (cond
-                            ((%xml-space-p (char text index))
+                            ((xml-space-char-p (char text index))
                              (incf index))
                             ((and (<= (+ index 4) length)
                                   (string= "<!--" text :start1 0 :end1 4
@@ -534,7 +508,7 @@ the parser then validates the resulting replacement as XML content."
                                   (string= "<!ENTITY" text :start1 0 :end1 8
                                            :start2 index :end2 (+ index 8))
                                   (or (= (+ index 8) length)
-                                      (%xml-space-p (char text (+ index 8)))
+                                      (xml-space-char-p (char text (+ index 8)))
                                       (char= (char text (+ index 8)) #\%)))
                              (multiple-value-bind (declaration next)
                                  (%parse-entity-declaration-at text (+ index 8) context)
@@ -551,7 +525,7 @@ the parser then validates the resulting replacement as XML content."
                                (unless declaration
                                  (%entity-error
                                   context
-                                  (format nil "Undeclared parameter entity ~A." name)
+                                  (xml-message :undeclared-parameter-entity name)
                                   :entity-declared name))
                                (if (xml-entity-declaration-external-p declaration)
                                    (%external-entity-result context declaration)
@@ -567,7 +541,7 @@ the parser then validates the resulting replacement as XML content."
                                   (string= "<![" text :start2 index :end2 (+ index 3)))
                              (%entity-error
                               context
-                              "Conditional sections are not supported in the internal subset."
+                              (xml-message :conditional-section-unsupported)
                               :markup-declaration))
                             ((and (< (+ index 1) length)
                                   (char= (char text index) #\<)
@@ -584,12 +558,4 @@ the parser then validates the resulting replacement as XML content."
 
 (defun %xml-expand-entity-references (text context &rest arguments)
   (apply #'expand-xml-entity-references text context arguments))
-
-(loop for (name . text) in
-      '((make-xml-entity-context . "Create parse-local XML entity expansion state.")
-        (make-xml-entity-declaration . "Create a parser-local XML entity declaration.")
-        (xml-entity-context-declare . "Register an entity declaration in a context.")
-        (expand-xml-entity-references . "Expand XML general and character references.")
-        (parse-xml-internal-subset . "Parse internal XML entity declarations."))
-      do (setf (documentation name 'function) text))
 

@@ -22,6 +22,12 @@
   :serial t
   :components ((:file "package")
                (:file "conditions")
+               (:file "macros")
+               (:file "data/error-messages")
+               (:file "data/character-classes")
+               (:file "data/resource-limits")
+               (:file "data/token-kinds")
+               (:file "data/event-kinds")
                (:file "resource-limits")
                (:file "nodes")
                (:file "events")

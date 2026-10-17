@@ -8,30 +8,30 @@
 
 (defun %edit-check-value (path value)
   "Require VALUE to be a string of XML characters."
-  (unless (stringp value)
-    (error 'xml-input-error :message "VALUE must be a string."))
+  (check-argument value stringp xml-input-error :label-must-be-string
+                  :format-arguments ("VALUE"))
   (let ((index (position-if-not #'xml-char-p value)))
     (when index
       (error 'xml-edit-value-error
              :path path :reason :invalid-character
-             :message (format nil "VALUE has a character that XML does not allow, U+~4,'0X at index ~D."
-                              (char-code (char value index)) index)))))
+             :message (xml-message :value-illegal-character
+                                   (char-code (char value index)) index)))))
 
 (defun %edit-refuse-namespace-declaration (path parsed)
   (when (%span-namespace-declaration-p (parsed-path-attribute-name parsed))
     (error 'xml-unsupported-edit
            :path path :reason :namespace-declaration
-           :message "Namespace declarations cannot be edited as attributes.")))
+           :message (xml-message :namespace-declaration-not-editable))))
 
 (defun %edit-single-hit (context parsed)
   "Return the one element that the element steps of PARSED select."
   (let ((hits (%path-resolve-elements context parsed)))
     (cond
       ((null hits)
-       (%path-error context :no-match "The path matches nothing."))
+       (%path-error context :no-match (xml-message :path-matches-nothing)))
       ((rest hits)
        (%path-error context :multiple-matches
-                    (format nil "The path matches ~D elements, not one." (length hits))))
+                    (xml-message :path-matches-several (length hits))))
       (t (first hits)))))
 
 (defun %edit-check-attlist (context hit)
@@ -40,8 +40,7 @@
     (when (member qname (span-document-attlist-element-names (path-context-spans context))
                   :test #'string=)
       (%path-refuse context :attlist-declaration
-                    (format nil "An ATTLIST declaration governs the attributes of <~A>."
-                            qname)))))
+                    (xml-message :attlist-governs-attributes qname)))))
 
 (defun %edit-escape-attribute (value quote-char)
   "Return VALUE escaped for use between QUOTE-CHAR quotes."
@@ -120,8 +119,9 @@ An unbound prefix in QNAME signals XML-PATH-ERROR with reason :UNDECLARED-PREFIX
          (uri (if prefix
                   (or (%edit-namespace-uri (path-hit-chain hit) prefix)
                       (%path-error context :undeclared-prefix
-                                   (format nil "The prefix ~A is not declared where <~A> starts."
-                                           prefix (span-element-qname (path-hit-element hit)))))
+                                   (xml-message :prefix-not-declared prefix
+                                                (span-element-qname
+                                                 (path-hit-element hit)))))
                   "")))
     (append (xml-element-attributes (car (path-hit-chain hit)))
             (list (make-xml-attribute
@@ -163,7 +163,7 @@ An unbound prefix in QNAME signals XML-PATH-ERROR with reason :UNDECLARED-PREFIX
     (%edit-check-attlist context hit)
     (let ((attribute (%path-find-attribute (path-hit-element hit) qname)))
       (unless attribute
-        (%path-error context :no-match "The path matches nothing."))
+        (%path-error context :no-match (xml-message :path-matches-nothing)))
       (%edit-finish context
                     (span-attribute-space-start attribute)
                     (span-attribute-value-end attribute)
@@ -202,12 +202,11 @@ An unbound prefix in QNAME signals XML-PATH-ERROR with reason :UNDECLARED-PREFIX
     (cond
       (entity
        (%path-refuse context :mixed-content
-                     (format nil "The content of <~A> references entity ~A, whose replacement text contains markup."
-                             (span-element-qname element) entity)))
+                     (xml-message :content-references-markup-entity
+                                  (span-element-qname element) entity)))
       ((notevery #'span-text-p (span-element-children element))
        (%path-refuse context :mixed-content
-                     (format nil "The content of <~A> holds elements, comments, or processing instructions."
-                             (span-element-qname element)))))))
+                     (xml-message :content-not-text (span-element-qname element)))))))
 
 (defun %edit-set-text (context parsed value)
   (let ((hit (%edit-single-hit context parsed)))
@@ -298,7 +297,7 @@ on both sides is plain whitespace, so no character data changes."
 (defun %edit-delete-element (context parsed)
   (let ((hit (%edit-single-hit context parsed)))
     (when (null (path-hit-ordinals hit))
-      (%path-refuse context :root-element "The document element cannot be deleted."))
+      (%path-refuse context :root-element (xml-message :root-not-deletable)))
     (let* ((element (path-hit-element hit))
            (ordinals (%path-hit-ordinal-path hit))
            (parent-ordinals (butlast ordinals)))
@@ -405,7 +404,7 @@ target and signals XML-PATH-ERROR with reason :WRONG-TARGET."
     (when (eq (parsed-path-target parsed) :text)
       (error 'xml-path-error
              :path path :reason :wrong-target
-             :message "A text() path cannot be deleted."))
+             :message (xml-message :text-path-not-deletable)))
     (when (eq (parsed-path-target parsed) :attribute)
       (%edit-refuse-namespace-declaration path parsed))
     (let ((context (%path-context source path
@@ -434,7 +433,7 @@ with the element added."
     (unless (eq (parsed-path-target parsed) :element)
       (error 'xml-path-error
              :path path :reason :wrong-target
-             :message "Only an element can have an element appended."))
+             :message (xml-message :append-needs-element)))
     (%edit-check-value path fragment)
     (%edit-append-element (%path-context source path
                                          :resource-limits resource-limits

@@ -221,7 +221,7 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
   (unless (equal (%format-signature (path-context-dom context))
                  (%format-signature (%edit-reparse context output)))
     (%path-refuse context :verification-failed
-                  "The formatted document differs from the source document."))
+                  (xml-message :format-differs)))
   output)
 
 (defun format-xml (source &key (indent 2)
@@ -238,10 +238,10 @@ become double quotes, CDATA sections and references become escaped text, and
 whitespace inside tags is normalized. The result is parsed again and must match
 SOURCE apart from that whitespace, otherwise XML-UNSUPPORTED-EDIT with reason
 :VERIFICATION-FAILED."
-  (unless (stringp source)
-    (error 'xml-input-error :message "SOURCE must be a string."))
+  (check-argument source stringp xml-input-error :label-must-be-string
+                  :format-arguments ("SOURCE"))
   (unless (and (integerp indent) (not (minusp indent)))
-    (error 'xml-input-error :message "INDENT must be a non-negative integer."))
+    (xml-error 'xml-input-error :indent-must-be-non-negative))
   (let ((context (%path-context source nil
                                 :resource-limits resource-limits
                                 :external-entity-policy external-entity-policy)))

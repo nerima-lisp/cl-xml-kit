@@ -171,11 +171,10 @@ reason :VERIFICATION-FAILED."
       (error 'xml-edit-value-error
              :path (path-context-path context) :reason :resource-limit
              :cause condition
-             :message (format nil "The edited document exceeds a resource limit: ~A"
-                              condition)))
+             :message (xml-message :edit-exceeds-limit condition)))
     (error (condition)
       (%path-refuse context :verification-failed
-                    (format nil "The edited document does not parse: ~A" condition)))))
+                    (xml-message :edit-does-not-parse condition)))))
 
 (defun %edit-verify (context candidate expected &key (lenient-ordinals :none))
   "Return CANDIDATE when it parses to EXPECTED, else refuse the edit.
@@ -186,7 +185,7 @@ difference from the EXPECTED document signals XML-UNSUPPORTED-EDIT with reason
   (unless (%dom-document-equivalent-p expected (%edit-reparse context candidate)
                                       lenient-ordinals)
     (%path-refuse context :verification-failed
-                  "The edited document differs from the requested change."))
+                  (xml-message :edit-differs)))
   candidate)
 
 (defun %edit-finish (context start end replacement expected &key (lenient-ordinals :none))

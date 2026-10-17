@@ -56,20 +56,28 @@ strings, both innermost first."
   (ordinals nil :read-only t)
   (steps nil :read-only t))
 
-(defstruct (xml-match
-            (:constructor %make-xml-match (kind path name value start end element))
-            (:copier nil)
-            (:predicate xml-match-p))
-  "One element, attribute, or text target that a path selected in a source string.
+(define-immutable-record xml-match
+    (:constructor %make-xml-match
+     :conc-name %xml-match-
+     :predicate xml-match-p
+     :predicate-doc "Return true when VALUE is an XML-MATCH."
+     :structure-doc "One element, attribute, or text target that a path selected in a source string.
 
-START and END are indices into that string, END exclusive."
-  (kind :element :read-only t)
-  (path "" :read-only t)
-  (name nil :read-only t)
-  (value nil :read-only t)
-  (start 0 :read-only t)
-  (end 0 :read-only t)
-  (element nil :read-only t))
+START and END are indices into that string, END exclusive.")
+  ((kind :element xml-match-kind "Return :ELEMENT, :ATTRIBUTE, or :TEXT." :identity)
+   (path "" xml-match-path
+         "Return the canonical path of a match, with an index on every element step."
+         :identity)
+   (name nil xml-match-name
+         "Return the lexical qualified name of an element or attribute match, or NIL."
+         :identity)
+   (value nil xml-match-value
+          "Return the decoded value of an attribute or text match, or NIL." :identity)
+   (start 0 xml-match-start "Return the index in the source where a match begins."
+          :identity)
+   (end 0 xml-match-end "Return the index in the source after a match." :identity)
+   (element nil xml-match-element
+            "Return the DOM element that a match is, or belongs to." :identity)))
 
 (defun %path-error (context reason message &key index)
   (error 'xml-path-error :path (path-context-path context) :reason reason
@@ -82,12 +90,12 @@ START and END are indices into that string, END exclusive."
 (defun %path-syntax-error (path index expectation)
   (error 'xml-path-error
          :path path :reason :syntax :index index
-         :message (format nil "Malformed path at index ~D: expected ~A." index expectation)))
+         :message (xml-message :path-syntax index expectation)))
 
 (defun %path-parse (path)
   "Parse PATH into a PARSED-PATH, or signal XML-PATH-ERROR :SYNTAX with the index of the fault."
-  (unless (stringp path)
-    (error 'xml-input-error :message "PATH must be a string."))
+  (check-argument path stringp xml-input-error :label-must-be-string
+                  :format-arguments ("PATH"))
   (let ((length (length path))
         (index 0)
         (steps nil))
@@ -162,8 +170,8 @@ START and END are indices into that string, END exclusive."
 
 The DOM comes from PARSE-XML on SOURCE without a leading U+FEFF, which the parser
 would otherwise reject; the span tree indexes SOURCE as given."
-  (unless (stringp source)
-    (error 'xml-input-error :message "SOURCE must be a string."))
+  (check-argument source stringp xml-input-error :label-must-be-string
+                  :format-arguments ("SOURCE"))
   (let ((dom (parse-xml (%strip-bom source)
                         :resource-limits resource-limits
                         :external-entity-policy external-entity-policy)))
@@ -194,8 +202,8 @@ would otherwise reject; the span tree indexes SOURCE as given."
     (when name
       (%path-refuse
        context :entity-reference
-       (format nil "The children of <~A> cannot be located in the source: its content references entity ~A, whose replacement text contains markup."
-               (span-element-qname (path-hit-element hit)) name)))))
+       (xml-message :children-not-locatable
+                    (span-element-qname (path-hit-element hit)) name)))))
 
 (defun %path-step-hits (context hit step)
   "Return the children of HIT that STEP selects, in document order."
@@ -326,13 +334,3 @@ a match refer to SOURCE itself."
                collect (%path-attribute-match hit attribute)))
       (:text (mapcar #'%path-text-match hits)))))
 
-(loop for (name . text) in
-      '((xml-match-p . "Return true when VALUE is an XML-MATCH.")
-        (xml-match-kind . "Return :ELEMENT, :ATTRIBUTE, or :TEXT.")
-        (xml-match-path . "Return the canonical path of a match, with an index on every element step.")
-        (xml-match-name . "Return the lexical qualified name of an element or attribute match, or NIL.")
-        (xml-match-value . "Return the decoded value of an attribute or text match, or NIL.")
-        (xml-match-start . "Return the index in the source where a match begins.")
-        (xml-match-end . "Return the index in the source after a match.")
-        (xml-match-element . "Return the DOM element that a match is, or belongs to."))
-      do (setf (documentation name 'function) text))

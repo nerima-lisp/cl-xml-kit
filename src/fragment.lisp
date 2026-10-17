@@ -82,11 +82,10 @@ cause; one that parses to anything but a single element signals
                              :reason (if (typep condition 'xml-resource-limit-exceeded)
                                          :resource-limit
                                          :malformed-fragment)
-                             :message (format nil "The fragment is not acceptable: ~A"
-                                              condition)))))
+                             :message (xml-message :fragment-unacceptable condition)))))
          (children (xml-element-children (first (xml-document-children wrapper)))))
     (unless (and children (null (rest children)) (xml-element-p (first children)))
       (error 'xml-edit-value-error
              :path path :reason :not-single-element
-             :message "The fragment must be exactly one element."))
+             :message (xml-message :fragment-not-single-element)))
     (values (first children) trimmed)))

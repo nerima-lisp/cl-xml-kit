@@ -36,10 +36,6 @@
         (setf (xml-parser-queue parser) cell))
     (setf (xml-parser-queue-tail parser) cell)))
 
-(defun %parser-raw-text (parser text &key attribute-p)
-  (expand-xml-entity-references text (xml-parser-entities parser)
-                                :attribute-p attribute-p))
-
 (defun %parser-element-limit (parser)
   (let ((value (1+ (xml-parser-element-count parser)))
         (limit (xml-resource-limits-max-elements (xml-parser-limits parser))))
@@ -96,11 +92,11 @@ The values are the root-name start and end, then the internal-subset start and
 end, which are NIL when BODY has no internal subset."
   (let ((length (length body))
         (index 0))
-    (loop while (and (< index length) (%xml-space-p (char body index)))
+    (loop while (and (< index length) (xml-space-char-p (char body index)))
           do (incf index))
     (let ((start index))
       (loop while (and (< index length)
-                       (%entity-name-char-p (char body index)))
+                       (xml-name-char-p (char body index)))
             do (incf index))
       (let ((open (position #\[ body :start index))
             (close (position #\] body :from-end t)))
@@ -113,20 +109,19 @@ end, which are NIL when BODY has no internal subset."
     (multiple-value-bind (start index subset-start subset-end)
         (%doctype-body-layout body)
       (when (= start index)
-        (%parser-token-error parser token "DOCTYPE needs a root name."
+        (%parser-token-error parser token (xml-message :doctype-needs-root-name)
                              :doctype :name))
       (let ((root-name (subseq body start index))
             (internal (and subset-start (subseq body subset-start subset-end))))
         (when (or (search "SYSTEM" body :start2 index :test #'char-equal)
                   (search "PUBLIC" body :start2 index :test #'char-equal))
           (when (eq (xml-parser-external-entity-policy parser) :reject)
-            (error 'xml-external-resource-disabled
-                   :message "External DTD resolution is disabled."
-                   :identifier root-name :kind :external-dtd
+            (xml-error 'xml-external-resource-disabled :external-dtd-disabled
+                       :condition-initargs (:identifier root-name :kind :external-dtd
                    :source (xml-parser-source-name parser)
-                   :position (xml-token-position token))))
+                                            :position (xml-token-position token)))))
         (when (xml-parser-doctype-seen parser)
-          (%parser-token-error parser token "Only one DOCTYPE is allowed."
+          (%parser-token-error parser token (xml-message :single-doctype)
                                :doctype :single-doctype))
         (setf (xml-parser-doctype-seen parser) t
               (xml-parser-doctype-root parser) root-name)
@@ -155,7 +150,7 @@ end, which are NIL when BODY has no internal subset."
                 (let ((value-token (%parser-next-token parser)))
                   (unless (eq (xml-token-kind value-token) :quoted-value)
                     (%parser-token-error parser value-token
-                                         "Expected a quoted attribute value."
+                                         (xml-message :expected-quoted-attribute-value)
                                          :attribute-value :quoted-value))
                   (incf count)
                   (let ((limit (xml-resource-limits-max-attributes-per-element
@@ -172,18 +167,19 @@ end, which are NIL when BODY has no internal subset."
                (:name
                 (when name
                   (%parser-token-error parser token
-                                       "Expected '=' after an attribute name."
+                                       (xml-message :expected-equals-after-attribute)
                                        :attribute :equals))
                 (setf name (xml-token-value token)))
                ((:tag-close :empty-element-close)
                 (when name
                   (%parser-token-error parser token
-                                       "Expected '=' after an attribute name."
+                                       (xml-message :expected-equals-after-attribute)
                                        :attribute :equals))
                 (return (values (nreverse entries) (xml-token-kind token)
                                 (xml-token-position token))))
                (otherwise
-                (%parser-token-error parser token "Unexpected token in a start tag."
+                (%parser-token-error parser token
+                                     (xml-message :unexpected-token-in-start-tag)
                                      :start-tag :attribute-or-close))))))
 
 (defun %parser-start-element (parser token)
@@ -235,12 +231,12 @@ end, which are NIL when BODY has no internal subset."
 (defun %parser-finish-element (parser frame token)
   (unless (string= (xml-token-value token)
                    (xml-parser-frame-lexical-name frame))
-    (%parser-token-error parser token "End tag does not match its start tag."
+    (%parser-token-error parser token (xml-message :end-tag-mismatch)
                          :element-type-match
                          (xml-parser-frame-lexical-name frame)))
   (let ((close (%parser-next-token parser)))
     (unless (eq (xml-token-kind close) :tag-close)
-      (%parser-token-error parser close "Expected '>' after an end tag."
+      (%parser-token-error parser close (xml-message :expected-close-after-end-tag)
                            :end-tag :tag-close))
     (let ((parent (cadr (xml-parser-stack parser)))
           (element (make-xml-element
@@ -263,13 +259,13 @@ end, which are NIL when BODY has no internal subset."
 
 (defun %parser-pi (parser token frame)
   (let* ((value (xml-token-value token))
-         (split (position-if #'%xml-space-p value))
+         (split (position-if #'xml-space-char-p value))
          (target (if split (subseq value 0 split) value))
          (data (and split (string-left-trim
                            '(#\Space #\Tab #\Newline #\Return)
                            (subseq value (1+ split))))))
     (when (string-equal target "xml")
-      (%parser-token-error parser token "The XML target is reserved."
+      (%parser-token-error parser token (xml-message :xml-target-reserved)
                            :processing-instruction :non-xml-target))
     (%parser-add-child parser frame
                        (make-xml-processing-instruction
@@ -352,27 +348,28 @@ end, which are NIL when BODY has no internal subset."
              (:start-tag-open
               (let ((name (%parser-next-token parser)))
                 (unless (eq (xml-token-kind name) :name)
-                  (%parser-token-error parser name "Expected an element name."
+                  (%parser-token-error parser name (xml-message :expected-element-name)
                                        :start-tag :name))
                 (%parser-start-element parser name)))
              (:end-tag-open
               (let ((name (%parser-next-token parser)))
                 (unless (eq (xml-token-kind name) :name)
-                  (%parser-token-error parser name "Expected an end-tag name."
+                  (%parser-token-error parser name (xml-message :expected-end-tag-name)
                                        :end-tag :name))
                 (when (and fragment-p (null (xml-parser-frame-name frame)))
                   (%parser-token-error
                    parser name
-                   "An entity replacement cannot close an element outside its fragment."
+                   (xml-message :entity-closes-outside-fragment)
                    :element-type-match :start-tag))
                 (return (%parser-finish-element parser frame name))))
              (:eof
               (if fragment-p
                   (return)
-                  (%parser-token-error parser token "Unexpected end of document."
+                  (%parser-token-error parser token
+                                       (xml-message :unexpected-end-of-document)
                                        :well-formedness :end-tag)))
              (otherwise
-              (%parser-token-error parser token "Unexpected token in element content."
+              (%parser-token-error parser token (xml-message :unexpected-token-in-content)
                                    :content nil)))))
 
 (defun %parser-xml-declaration-token-p (token)
@@ -380,7 +377,7 @@ end, which are NIL when BODY has no internal subset."
     (and (>= (length value) 3)
          (string= "xml" value :end2 3)
          (or (= (length value) 3)
-             (%xml-space-p (char value 3))))))
+             (xml-space-char-p (char value 3))))))
 
 (defun %parser-parse-xml-declaration (parser token)
   (let* ((body (xml-token-value token))
@@ -390,7 +387,7 @@ end, which are NIL when BODY has no internal subset."
                (%parser-token-error parser token message
                                     :xml-declaration expected))
              (space-p ()
-               (and (< index length) (%xml-space-p (char body index))))
+               (and (< index length) (xml-space-char-p (char body index))))
              (skip-space ()
                (let ((start index))
                  (loop while (space-p) do (incf index))
@@ -401,28 +398,28 @@ end, which are NIL when BODY has no internal subset."
                              :end2 (+ index (length literal)))))
              (read-keyword (keyword)
                (unless (literal-p keyword)
-                 (fail "Expected an XML declaration keyword."
+                 (fail (xml-message :expected-declaration-keyword)
                        keyword))
                (incf index (length keyword)))
              (read-equals ()
                (skip-space)
                (unless (and (< index length) (char= (char body index) #\=))
-                 (fail "Expected '=' in the XML declaration." :equals))
+                 (fail (xml-message :expected-declaration-equals) :equals))
                (incf index)
                (skip-space))
              (read-quoted-value ()
                (unless (< index length)
-                 (fail "Expected a quoted XML declaration value." :quoted-value))
+                 (fail (xml-message :expected-declaration-value) :quoted-value))
                (let ((quote (char body index)))
                  (unless (or (char= quote #\") (char= quote #\'))
-                   (fail "Expected a quoted XML declaration value." :quoted-value))
+                   (fail (xml-message :expected-declaration-value) :quoted-value))
                  (incf index)
                  (let ((start index))
                    (loop while (and (< index length)
                                     (not (char= (char body index) quote)))
                          do (incf index))
                    (when (= index length)
-                     (fail "An XML declaration value is unterminated." quote))
+                     (fail (xml-message :unterminated-declaration-value) quote))
                    (prog1 (subseq body start index)
                      (incf index)))))
              (read-encoding ()
@@ -433,23 +430,23 @@ end, which are NIL when BODY has no internal subset."
                    (error 'xml-unsupported-encoding
                           :encoding encoding
                           :reason :declaration-not-utf-8
-                          :message "The XML declaration must use UTF-8."
+                          :message (xml-message :declaration-not-utf-8)
                           :source (xml-parser-source-name parser)
                           :position (xml-token-position token)))))
              (read-standalone ()
                (read-keyword "standalone")
                (read-equals)
                (unless (member (read-quoted-value) '("yes" "no") :test #'string=)
-                 (fail "Standalone must be either 'yes' or 'no'." '("yes" "no")))))
+                 (fail (xml-message :standalone-invalid) '("yes" "no")))))
       (unless (skip-space)
-        (fail "XML declaration version information is required." :version))
+        (fail (xml-message :declaration-version-required) :version))
       (read-keyword "version")
       (read-equals)
       (unless (string= "1.0" (read-quoted-value))
-        (fail "Only XML version 1.0 is supported." "1.0"))
+        (fail (xml-message :unsupported-version) "1.0"))
       (let ((has-space (skip-space)))
         (when (and (not has-space) (< index length))
-          (fail "XML declaration attributes must be separated by XML whitespace."
+          (fail (xml-message :declaration-needs-whitespace)
                 :xml-whitespace))
         (when (< index length)
           (cond
@@ -457,20 +454,20 @@ end, which are NIL when BODY has no internal subset."
              (read-encoding)
              (let ((has-space (skip-space)))
                (when (and (not has-space) (< index length))
-                 (fail "XML declaration attributes must be separated by XML whitespace."
+                 (fail (xml-message :declaration-needs-whitespace)
                        :xml-whitespace))
                (when (< index length)
                  (read-standalone))))
             ((literal-p "standalone")
              (read-standalone))
             (t
-             (fail "Expected an XML declaration keyword." '(:encoding :standalone))))
+             (fail (xml-message :expected-declaration-keyword) '(:encoding :standalone))))
           (let ((has-space (skip-space)))
             (when (and (not has-space) (< index length))
-              (fail "XML declaration attributes must be separated by XML whitespace."
+              (fail (xml-message :declaration-needs-whitespace)
                     :xml-whitespace))))
         (when (< index length)
-          (fail "Unexpected content in the XML declaration." :end))))))
+          (fail (xml-message :unexpected-declaration-content) :end))))))
 
 (defun %parser-build (parser)
   (setf (xml-parser-entities parser)
@@ -482,9 +479,9 @@ end, which are NIL when BODY has no internal subset."
         do (case (xml-token-kind token)
              (:text
               (let ((text (xml-token-value token)))
-                (unless (every #'%xml-space-p text)
+                (unless (every #'xml-space-char-p text)
                   (%parser-token-error parser token
-                                       "Non-whitespace text is outside the root."
+                                       (xml-message :text-outside-root)
                                        :well-formedness :root-element))
                 (when (xml-parser-root-seen parser)
                   (%parser-add-text parser nil
@@ -494,7 +491,7 @@ end, which are NIL when BODY has no internal subset."
              (:entity-reference
               (unless (and (xml-parser-root-seen parser)
                            (not (xml-parser-root-closed parser)))
-                (%parser-token-error parser token "An entity is outside the root."
+                (%parser-token-error parser token (xml-message :entity-outside-root)
                                      :well-formedness :root-element))
               (%parser-add-text parser nil
                                 (expand-xml-entity-references
@@ -516,44 +513,44 @@ end, which are NIL when BODY has no internal subset."
                            (zerop (xml-position-offset (xml-token-position token))))
                       (%parser-parse-xml-declaration parser token)
                       (%parser-token-error parser token
-                                           "The XML declaration must be first."
+                                           (xml-message :declaration-not-first)
                                            :xml-declaration :document-start))
                   (%parser-pi parser token nil)))
              (:cdata
-              (%parser-token-error parser token "CDATA is outside the root."
+              (%parser-token-error parser token (xml-message :cdata-outside-root)
                                    :well-formedness :root-element))
              (:doctype
               (when (xml-parser-root-seen parser)
                 (%parser-token-error parser token
-                                     "DOCTYPE must appear before the root element."
+                                     (xml-message :doctype-after-root)
                                      :doctype :document-prolog))
               (%parser-parse-doctype parser token))
              (:start-tag-open
               (when (xml-parser-root-seen parser)
-                (%parser-token-error parser token "A document has one root element."
+                (%parser-token-error parser token (xml-message :single-root)
                                      :well-formedness :single-root))
               (setf (xml-parser-root-seen parser) t)
               (let ((name (%parser-next-token parser)))
                 (unless (eq (xml-token-kind name) :name)
-                  (%parser-token-error parser name "Expected a root element name."
+                  (%parser-token-error parser name (xml-message :expected-root-name)
                                        :start-tag :name))
                 (when (and (xml-parser-doctype-root parser)
                            (not (string= (xml-token-value name)
                                          (xml-parser-doctype-root parser))))
                   (%parser-token-error parser name
-                                       "The document root does not match DOCTYPE."
+                                       (xml-message :root-doctype-mismatch)
                                        :doctype-root-match
                                        (xml-parser-doctype-root parser)))
                 (%parser-start-element parser name)))
              (:end-tag-open
-              (%parser-token-error parser token "An end tag has no open element."
+              (%parser-token-error parser token (xml-message :end-tag-without-element)
                                    :element-type-match :start-tag))
              (:eof
               (unless (xml-parser-root-seen parser)
-                (%parser-token-error parser token "A document needs a root element."
+                (%parser-token-error parser token (xml-message :root-required)
                                      :well-formedness :root-element))
               (unless (null (xml-parser-stack parser))
-                (%parser-token-error parser token "The document ended in an element."
+                (%parser-token-error parser token (xml-message :document-ended-in-element)
                                      :element-type-match :end-tag))
               (setf (xml-parser-root-closed parser) t)
               (return))))
@@ -573,11 +570,13 @@ end, which are NIL when BODY has no internal subset."
                (external-entity-policy :reject))
   "Create a forward-only parser for XML input."
   (unless (or (null source-name) (stringp source-name))
-    (error 'xml-input-error :message "SOURCE-NAME must be a string or NIL."))
-  (unless (xml-resource-limits-p resource-limits)
-    (error 'xml-input-error :message "RESOURCE-LIMITS must be XML-RESOURCE-LIMITS."))
+    (xml-error 'xml-input-error :label-must-be-string-or-nil
+               :format-arguments ("SOURCE-NAME")))
+  (check-argument resource-limits xml-resource-limits-p xml-input-error
+                  :label-must-be-resource-limits
+                  :format-arguments ("RESOURCE-LIMITS"))
   (unless (member external-entity-policy '(:reject :skip))
-    (error 'xml-input-error :message "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP."))
+    (xml-error 'xml-input-error :external-entity-policy-invalid))
   (multiple-value-bind (text source)
       (%parser-input-string input source-name resource-limits)
     (%make-xml-parser
@@ -588,11 +587,10 @@ end, which are NIL when BODY has no internal subset."
 
 (defun next-xml-event (parser)
   "Return the next pull event, or NIL after END-DOCUMENT."
-  (unless (xml-parser-p parser)
-    (error 'xml-input-error :message "PARSER must be an XML parser."))
+  (check-argument parser xml-parser-p xml-input-error :parser-required)
   (when (xml-parser-fatal parser)
-    (error 'xml-parser-state-error :message "The parser is in a fatal state."
-           :parser parser))
+    (xml-error 'xml-parser-state-error :parser-fatal
+               :condition-initargs (:parser parser)))
   (when (xml-parser-eof parser)
     (return-from next-xml-event nil))
   (handler-case
@@ -620,8 +618,7 @@ end, which are NIL when BODY has no internal subset."
 
 (defun xml-parser-eof-p (parser)
   "Return true when PARSER has emitted END-DOCUMENT."
-  (unless (xml-parser-p parser)
-    (error 'xml-input-error :message "PARSER must be an XML parser."))
+  (check-argument parser xml-parser-p xml-input-error :parser-required)
   (xml-parser-eof parser))
 
 (defun parse-xml

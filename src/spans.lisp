@@ -293,7 +293,7 @@ by the SHIFT of a skipped leading U+FEFF."
          (frame (pop (span-scanner-stack scanner))))
     (unless (and frame
                  (string= (%xml-token-value name-token) (span-frame-qname frame)))
-      (%span-fail name-token "End tag does not match its start tag."))
+      (%span-fail name-token (xml-message :end-tag-mismatch)))
     (%span-flush-run scanner frame)
     (let ((end-tag-start (%span-token-start scanner open-token))
           (end (%span-token-end scanner close-token)))
@@ -409,7 +409,7 @@ a qualifying entity."
                       (%span-token-end scanner token))))
     (:start-tag-open (%span-scan-start-tag scanner token))
     (:end-tag-open (%span-scan-end-tag scanner token))
-    (otherwise (%span-fail token "Unexpected token in element content."))))
+    (otherwise (%span-fail token (xml-message :unexpected-token-in-content)))))
 
 (defun %span-scan-top-level (scanner token)
   (case (xml-token-kind token)
@@ -431,16 +431,16 @@ a qualifying entity."
         (setf (span-scanner-declaration scanner)
               (%make-span-node (%span-token-start scanner token)
                                (%span-token-end scanner token))))
-       (t (%span-fail token "The XML declaration must be first."))))
+       (t (%span-fail token (xml-message :declaration-not-first)))))
     (:doctype
      (when (span-scanner-doctype scanner)
-       (%span-fail token "Only one DOCTYPE is allowed."))
+       (%span-fail token (xml-message :single-doctype)))
      (%span-scan-doctype scanner token))
     (:start-tag-open
      (when (span-scanner-root scanner)
-       (%span-fail token "A document has one root element."))
+       (%span-fail token (xml-message :single-root)))
      (%span-scan-start-tag scanner token))
-    (otherwise (%span-fail token "Unexpected token outside the root element."))))
+    (otherwise (%span-fail token (xml-message :unexpected-token-outside-root)))))
 
 (defun %span-offsets (source text shift)
   "Map each normalized index of TEXT, and its length, to an index in SOURCE.
@@ -479,8 +479,8 @@ Return NIL when no CRLF pair collapsed, so the map is the SHIFT alone."
 Spans index SOURCE itself. A leading U+FEFF is skipped and every CRLF or CR is
 read as the single line feed the parser sees. The scanner relies on PARSE-XML,
 run with the same options, for well-formedness."
-  (unless (stringp source)
-    (error 'xml-input-error :message "XML span SOURCE must be a string."))
+  (check-argument source stringp xml-input-error :label-must-be-string
+                  :format-arguments ("XML span SOURCE"))
   (let* ((shift (if (and (plusp (length source))
                          (char= (char source 0) (code-char #xFEFF)))
                     1
@@ -499,9 +499,9 @@ run with the same options, for well-formedness."
                            (%span-scan-top-level scanner token))
                     finally (return token))))
     (when (span-scanner-stack scanner)
-      (%span-fail eof "The document ended in an element."))
+      (%span-fail eof (xml-message :document-ended-in-element)))
     (unless (span-scanner-root scanner)
-      (%span-fail eof "A document needs a root element."))
+      (%span-fail eof (xml-message :root-required)))
     (%make-span-document
      :declaration (span-scanner-declaration scanner)
      :doctype (span-scanner-doctype scanner)

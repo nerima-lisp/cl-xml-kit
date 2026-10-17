@@ -1,22 +1,21 @@
 (in-package #:cl-xml-kit)
 
-(defstruct (xml-input
-            (:constructor %make-xml-input (text source line-starts limits))
-            (:conc-name %xml-input-)
-            (:copier nil)
-            (:predicate xml-input-p))
-  "An immutable, normalized XML input view used by the tokenizer.
+(define-immutable-record xml-input
+    (:constructor %make-xml-input
+     :conc-name %xml-input-
+     :predicate xml-input-p
+     :predicate-doc "Return true when VALUE is an XML input."
+     :structure-doc "An immutable, normalized XML input view used by the tokenizer.
 
 The TEXT slot is normalized XML character data. LINE-STARTS stores normalized
 character offsets, so XML-INPUT-POSITION-AT can return positions without
-retaining one position object per character."
-  (text "" :read-only t)
-  (source nil :read-only t)
-  (line-starts #(0) :read-only t)
-  (limits nil :read-only t))
-
-(defun %input-error (control &rest arguments)
-  (error 'xml-input-error :message (apply #'format nil control arguments)))
+retaining one position object per character.")
+  ((text "" xml-input-text
+         "Return a fresh copy of INPUT's normalized string for the tokenizer." :copy-seq)
+   (source nil xml-input-source "Return INPUT's source name, or NIL, as a fresh string."
+           :copy-seq)
+   (line-starts #(0) nil nil :identity)
+   (limits nil xml-input-limits "Return INPUT's immutable resource limits." :identity)))
 
 (defun %input-position (source offset line column)
   (make-xml-position :source source :offset offset :line line :column column))
@@ -28,8 +27,7 @@ retaining one position object per character."
          :limit limit
          :source source
          :position (%input-position source offset line column)
-         :message (format nil "XML input limit ~S exceeded: ~D is greater than ~D."
-                          kind value limit)))
+         :message (xml-message :input-limit-exceeded kind value limit)))
 
 (defun %normalize-from-reader (reader limits source)
   (let ((limit (xml-resource-limits-max-document-characters limits))
@@ -123,8 +121,7 @@ retaining one position object per character."
            :encoding :utf-8
            :source source
            :position position
-           :message (format nil "Invalid UTF-8 input at octet ~D."
-                            octet-position))))
+           :message (xml-message :invalid-utf-8 octet-position))))
 
 (defun %unsupported-encoding-bom (octets)
   (cond
@@ -157,8 +154,8 @@ retaining one position object per character."
                  :reason reason
                  :source source
                  :position (%input-position source 0 1 1)
-                 :message (format nil "~A input is not supported by the XML UTF-8 profile."
-                                  (string-upcase (symbol-name encoding))))
+                 :message (xml-message :encoding-not-supported
+                                       (string-upcase (symbol-name encoding))))
           (progn
             (let ((start (if (and (>= (length octets) 3)
                                    (= (aref octets 0) #xEF)
@@ -195,16 +192,18 @@ The tokenizer consumes this result as follows:
   (xml-input-source input) :limits limits)`. The returned tokenizer therefore
 receives the normalized string, not the original stream or octet vector."
   (when (and source (not (stringp source)))
-    (%input-error "XML input SOURCE must be a string or NIL."))
+    (xml-error 'xml-input-error :label-must-be-string-or-nil
+               :format-arguments ("XML input SOURCE")))
   (when (and limits-supplied-p resource-limits-supplied-p)
-    (%input-error "Specify either LIMITS or RESOURCE-LIMITS, not both."))
+    (xml-error 'xml-input-error :limits-specified-twice))
   (let ((selected-limits
           (cond
             (resource-limits-supplied-p resource-limits)
             (limits-supplied-p limits)
             (t *default-xml-resource-limits*))))
     (unless (xml-resource-limits-p selected-limits)
-      (%input-error "XML input LIMITS must be XML-RESOURCE-LIMITS."))
+      (xml-error 'xml-input-error :label-must-be-resource-limits
+                 :format-arguments ("XML input LIMITS")))
     (cond
       ((stringp input)
        (%make-input
@@ -225,20 +224,7 @@ receives the normalized string, not the original stream or octet vector."
          (lambda () (read-char input nil nil)) selected-limits source)
         source selected-limits))
       (t
-       (%input-error
-        "XML input must be a string, character input stream, or octet vector.")))))
-
-(defun xml-input-text (input)
-  "Return a fresh copy of INPUT's normalized string for the tokenizer."
-  (copy-seq (%xml-input-text input)))
-
-(defun xml-input-source (input)
-  "Return INPUT's source name, or NIL, as a fresh string."
-  (and (%xml-input-source input) (copy-seq (%xml-input-source input))))
-
-(defun xml-input-limits (input)
-  "Return INPUT's immutable resource limits."
-  (%xml-input-limits input))
+       (xml-error 'xml-input-error :input-type-unsupported)))))
 
 (defun xml-input-position-at (input offset)
   "Return the normalized XML position at character OFFSET.
@@ -248,7 +234,7 @@ position. The returned line and column are one-based."
   (unless (and (integerp offset)
                (<= 0 offset)
                (<= offset (length (%xml-input-text input))))
-    (%input-error "XML input position offset must be between zero and the text length."))
+    (xml-error 'xml-input-error :input-offset-out-of-range))
   (let* ((starts (%xml-input-line-starts input))
          (low 0)
          (high (1- (length starts))))
@@ -261,13 +247,4 @@ position. The returned line and column are one-based."
                      offset
                      (1+ low)
                      (1+ (- offset (aref starts low))))))
-
-(loop for (name . text) in
-      '((xml-input-p . "Return true when VALUE is an XML input.")
-        (xml-input-text . "Return a fresh copy of normalized XML input text.")
-        (xml-input-source . "Return an XML input's source name, or NIL.")
-        (xml-input-limits . "Return an XML input's resource limits.")
-        (xml-input-position-at . "Return the normalized position at a character offset.")
-        (make-xml-input . "Normalize a string, character stream, or UTF-8 octet vector."))
-      do (setf (documentation name 'function) text))
 

@@ -174,3 +174,18 @@
         (xml-well-formedness-error (caught) (setf condition caught)))
       (expect (xml-well-formedness-error-constraint condition)
               :to-equal :no-lt-in-attribute-values))))
+
+(it "rejects entity names that start with the multiplication or division sign"
+  (dolist (code '(#xD7 #xF7))
+    (let ((condition nil))
+      (handler-case
+          (cl-xml-kit::parse-xml-internal-subset
+           (format nil "<!ENTITY ~Cx 'v'>" (code-char code)))
+        (xml-well-formedness-error (caught) (setf condition caught)))
+      (expect (xml-well-formedness-error-constraint condition)
+              :to-equal :entity-declaration)))
+  (let ((context (cl-xml-kit::parse-xml-internal-subset
+                  (format nil "<!ENTITY ~Cx 'v'>" (code-char #xC0)))))
+    (expect (cl-xml-kit::expand-xml-entity-references
+             (format nil "&~Cx;" (code-char #xC0)) context)
+            :to-equal "v")))

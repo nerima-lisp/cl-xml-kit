@@ -15,7 +15,7 @@
 
 (defun %namespace-limit-error (kind value limit &key position)
   (error 'xml-resource-limit-exceeded
-         :message (format nil "XML resource limit ~S exceeded." kind)
+         :message (xml-message :resource-limit-exceeded kind)
          :kind kind
          :value value
          :limit limit
@@ -24,47 +24,20 @@
 (defun %namespace-check-name-limit (name resource-limits &key position)
   (let ((limits (or resource-limits *default-xml-resource-limits*)))
     (unless (xml-resource-limits-p limits)
-      (%xml-invalid "RESOURCE-LIMITS must be an XML-RESOURCE-LIMITS value."))
+      (xml-error 'xml-input-error :resource-limits-value-required))
     (let ((limit (xml-resource-limits-max-name-length limits))
           (value (length name)))
       (when (> value limit)
         (%namespace-limit-error :max-name-length value limit :position position))))
   name)
 
-(defun %namespace-name-start-char-p (character)
-  (let ((code (char-code character)))
-    (or (= code #x5F)
-        (<= #x41 code #x5A)
-        (<= #x61 code #x7A)
-        (<= #xC0 code #xD6)
-        (<= #xD8 code #xF6)
-        (<= #xF8 code #x2FF)
-        (<= #x370 code #x37D)
-        (<= #x37F code #x1FFF)
-        (<= #x200C code #x200D)
-        (<= #x2070 code #x218F)
-        (<= #x2C00 code #x2FEF)
-        (<= #x3001 code #xD7FF)
-        (<= #xF900 code #xFDCF)
-        (<= #xFDF0 code #xFFFD)
-        (<= #x10000 code #xEFFFF))))
-
-(defun %namespace-name-char-p (character)
-  (let ((code (char-code character)))
-    (or (%namespace-name-start-char-p character)
-        (<= #x30 code #x39)
-        (member character '(#\- #\.) :test #'char=)
-        (= code #xB7)
-        (<= #x300 code #x36F)
-        (<= #x203F code #x2040))))
-
 (defun %namespace-ncname-p (name)
   (and (stringp name)
        (plusp (length name))
        (not (find #\: name))
-       (%namespace-name-start-char-p (char name 0))
+       (xml-ncname-start-char-p (char name 0))
        (loop for index from 1 below (length name)
-             always (%namespace-name-char-p (char name index)))))
+             always (xml-ncname-char-p (char name index)))))
 
 (defun %namespace-xml-prefix-p (prefix)
   (and (stringp prefix)
@@ -73,24 +46,24 @@
 
 (defun %namespace-split-qname (lexical-name &key resource-limits position)
   (unless (and (stringp lexical-name) (plusp (length lexical-name)))
-    (%namespace-error "A qualified name must be a non-empty string."
+    (%namespace-error (xml-message :qname-not-string)
                       :position position))
   (%namespace-check-name-limit lexical-name resource-limits :position position)
   (let ((colon (position #\: lexical-name)))
     (when (and colon (position #\: lexical-name :start (1+ colon)))
-      (%namespace-error "A qualified name may contain only one colon."
+      (%namespace-error (xml-message :qname-two-colons)
                         :position position))
     (if colon
         (let ((prefix (subseq lexical-name 0 colon))
               (local-name (subseq lexical-name (1+ colon))))
           (unless (and (%namespace-ncname-p prefix)
                        (%namespace-ncname-p local-name))
-            (%namespace-error "A qualified name must contain two NCNames."
+            (%namespace-error (xml-message :qname-not-two-ncnames)
                               :prefix prefix :position position))
           (values prefix local-name))
         (progn
           (unless (%namespace-ncname-p lexical-name)
-            (%namespace-error "An unprefixed name must be an NCName."
+            (%namespace-error (xml-message :unprefixed-name-not-ncname)
                               :position position))
           (values nil lexical-name)))))
 
@@ -125,32 +98,32 @@
 
 (defun %namespace-validate-binding (binding &key position)
   (unless (xml-namespace-binding-p binding)
-    (%xml-invalid "A namespace declaration must be an XML-NAMESPACE-BINDING."))
+    (xml-error 'xml-input-error :namespace-binding-required))
   (let ((prefix (%namespace-declaration-prefix binding))
         (uri (%namespace-declaration-uri binding)))
     (when (and prefix (not (%namespace-ncname-p prefix)))
-      (%namespace-error "A namespace prefix must be an NCName."
+      (%namespace-error (xml-message :prefix-not-ncname)
                         :prefix prefix :namespace-uri uri :position position))
     (when (and prefix (string= prefix "xmlns"))
-      (%namespace-error "The xmlns prefix is reserved for declarations."
+      (%namespace-error (xml-message :xmlns-prefix-reserved-for-declarations)
                         :prefix prefix :namespace-uri uri :position position))
     (when (and prefix (%namespace-xml-prefix-p prefix)
                (not (string= prefix "xml")))
-      (%namespace-error "Prefixes beginning with xml are reserved."
+      (%namespace-error (xml-message :xml-prefixes-reserved)
                         :prefix prefix :namespace-uri uri :position position))
     (when (and prefix (zerop (length uri)))
-      (%namespace-error "A prefixed namespace cannot be undeclared."
+      (%namespace-error (xml-message :prefixed-namespace-undeclared)
                         :prefix prefix :namespace-uri uri :position position))
     (when (and (string= uri +xml-namespace-uri+)
                (not (and prefix (string= prefix "xml"))))
-      (%namespace-error "Only the xml prefix may bind the XML namespace."
+      (%namespace-error (xml-message :only-xml-prefix-binds-xml-namespace)
                         :prefix prefix :namespace-uri uri :position position))
     (when (and prefix (string= prefix "xml")
                (not (string= uri +xml-namespace-uri+)))
-      (%namespace-error "The xml prefix has a fixed namespace URI."
+      (%namespace-error (xml-message :xml-prefix-fixed-uri)
                         :prefix prefix :namespace-uri uri :position position))
     (when (string= uri +xmlns-namespace-uri+)
-      (%namespace-error "The XMLNS namespace cannot be declared."
+      (%namespace-error (xml-message :xmlns-namespace-not-declarable)
                         :prefix prefix :namespace-uri uri :position position))
     binding))
 
@@ -162,7 +135,7 @@
     (context declarations &key resource-limits position)
   "Return CONTEXT extended by DECLARATIONS in source order."
   (unless (typep context 'xml-namespace-context)
-    (%xml-invalid "CONTEXT must be an XML-NAMESPACE-CONTEXT value."))
+    (xml-error 'xml-input-error :namespace-context-required))
   (%list-value declarations "DECLARATIONS")
   (let ((bindings (%namespace-copy-bindings
                    (%xml-namespace-context-bindings context)))
@@ -171,7 +144,7 @@
       (%namespace-validate-binding declaration :position position)
       (let ((prefix (%namespace-declaration-prefix declaration)))
         (when (member prefix seen :test #'equal)
-          (%namespace-error "A namespace prefix may be declared only once on an element."
+          (%namespace-error (xml-message :prefix-declared-twice)
                             :prefix prefix
                             :namespace-uri (%namespace-declaration-uri declaration)
                             :position position))
@@ -184,7 +157,7 @@
                     bindings)))))
     (let ((limits (or resource-limits *default-xml-resource-limits*)))
       (unless (xml-resource-limits-p limits)
-        (%xml-invalid "RESOURCE-LIMITS must be an XML-RESOURCE-LIMITS value."))
+        (xml-error 'xml-input-error :resource-limits-value-required))
       (let ((value (%namespace-binding-count bindings))
             (limit (xml-resource-limits-max-namespace-bindings limits)))
         (when (> value limit)
@@ -204,13 +177,14 @@
     (lexical-name namespace-uri &key resource-limits position)
   "Return a binding for the namespace declaration attribute LEXICAL-NAME."
   (unless (stringp lexical-name)
-    (%xml-invalid "A namespace attribute name must be a string."))
+    (xml-error 'xml-input-error :label-must-be-string
+               :format-arguments ("A namespace attribute name")))
   (%namespace-check-name-limit lexical-name resource-limits :position position)
   (cond
     ((string= lexical-name "xmlns")
      (%string-value namespace-uri "NAMESPACE-URI")
      (when (string= namespace-uri +xml-namespace-uri+)
-       (%namespace-error "The XML namespace cannot be the default namespace."
+       (%namespace-error (xml-message :xml-namespace-not-default)
                          :namespace-uri namespace-uri :position position))
      (%namespace-validate-binding
       (%make-xml-namespace-binding nil (copy-seq namespace-uri))
@@ -220,7 +194,7 @@
      (let ((prefix (subseq lexical-name 6)))
        (%string-value namespace-uri "NAMESPACE-URI")
        (unless (%namespace-ncname-p prefix)
-         (%namespace-error "A namespace declaration must name an NCName prefix."
+         (%namespace-error (xml-message :declaration-prefix-not-ncname)
                            :prefix prefix :namespace-uri namespace-uri
                            :position position))
        (%namespace-validate-binding
@@ -232,7 +206,7 @@
     (lexical-name context &key attribute-p declaration-p resource-limits position)
   "Resolve LEXICAL-NAME against CONTEXT and return an XML-NAME."
   (unless (typep context 'xml-namespace-context)
-    (%xml-invalid "CONTEXT must be an XML-NAMESPACE-CONTEXT value."))
+    (xml-error 'xml-input-error :namespace-context-required))
   (multiple-value-bind (prefix local-name)
       (%namespace-split-qname lexical-name
                               :resource-limits resource-limits
@@ -240,18 +214,18 @@
     (when (and (not declaration-p)
                (or (string= local-name "xmlns")
                    (and prefix (string= prefix "xmlns"))))
-      (%namespace-error "The xmlns name is reserved for namespace declarations."
+      (%namespace-error (xml-message :xmlns-name-reserved)
                         :prefix prefix :namespace-uri +xmlns-namespace-uri+
                         :position position))
     (if prefix
         (let ((uri (%namespace-binding-uri context prefix)))
           (unless (and (%namespace-binding-present-p context prefix)
                        (plusp (length uri)))
-            (%namespace-error "A prefixed name has no in-scope namespace binding."
+            (%namespace-error (xml-message :prefix-not-bound)
                               :prefix prefix :namespace-uri uri :position position))
           (when (and (string= prefix "xml")
                      (not (string= uri +xml-namespace-uri+)))
-            (%namespace-error "The xml prefix has a fixed namespace URI."
+            (%namespace-error (xml-message :xml-prefix-fixed-uri)
                               :prefix prefix :namespace-uri uri :position position))
           (make-xml-name :local-name local-name :namespace-uri uri :prefix prefix))
         (let ((uri (if attribute-p
@@ -279,24 +253,25 @@
   (let ((seen nil))
     (dolist (attribute attributes attributes)
       (unless (xml-attribute-p attribute)
-        (%xml-invalid "An attribute must be an XML-ATTRIBUTE value."))
+        (xml-error 'xml-input-error :attribute-required))
       (let ((name (xml-attribute-name attribute)))
         (unless (xml-name-p name)
-          (%xml-invalid "An attribute name must be an XML-NAME value."))
+          (xml-error 'xml-input-error :attribute-name-required))
         (let ((key (%namespace-expanded-name-key name)))
           (when (member key seen :test #'equal)
-            (error 'xml-well-formedness-error
-                   :message "Two attributes have the same expanded name."
-                   :constraint :unique-att-spec
+            (xml-error 'xml-well-formedness-error :duplicate-expanded-attribute
+                       :condition-initargs (:constraint :unique-att-spec
                    :expected "a unique expanded attribute name"
-                   :position (or (xml-attribute-position attribute) position)))
+                                            :position (or (xml-attribute-position attribute)
+                                                          position))))
           (push key seen))))))
 
 (defun %namespace-attribute-entry (entry)
   (unless (and (consp entry) (stringp (car entry)))
-    (%xml-invalid "An attribute entry must be a (NAME . VALUE) pair."))
+    (xml-error 'xml-input-error :attribute-entry-invalid))
   (unless (stringp (cdr entry))
-    (%xml-invalid "An attribute value must be a string."))
+    (xml-error 'xml-input-error :label-must-be-string
+               :format-arguments ("An attribute value")))
   (values (car entry) (cdr entry)))
 
 (defun %namespace-resolve-attributes
@@ -310,11 +285,10 @@
       (multiple-value-bind (lexical-name value)
           (%namespace-attribute-entry entry)
         (when (member lexical-name seen-lexical :test #'string=)
-          (error 'xml-well-formedness-error
-                 :message "An attribute name occurs more than once."
-                 :constraint :unique-att-spec
+          (xml-error 'xml-well-formedness-error :duplicate-attribute
+                     :condition-initargs (:constraint :unique-att-spec
                  :expected "a unique attribute name"
-                 :position position))
+                                          :position position)))
         (push lexical-name seen-lexical)
         (let ((declaration (%namespace-declaration-binding
                             lexical-name value
