@@ -79,10 +79,6 @@
             (cons (car binding) (copy-seq (cdr binding))))
           bindings))
 
-(defun xml-namespace-context-bindings (context)
-  "Return a fresh alist snapshot of CONTEXT's namespace bindings."
-  (%namespace-copy-bindings (%xml-namespace-context-bindings context)))
-
 (defun %namespace-binding-uri (context prefix)
   (cdr (assoc prefix (%xml-namespace-context-bindings context) :test #'equal)))
 
@@ -198,7 +194,7 @@
     (t nil)))
 
 (defun %namespace-resolve-qname
-    (lexical-name context &key attribute-p declaration-p resource-limits position)
+    (lexical-name context &key attribute-p resource-limits position)
   "Resolve LEXICAL-NAME against CONTEXT and return an XML-NAME."
   (unless (typep context 'xml-namespace-context)
     (xml-error 'xml-input-error :namespace-context-required))
@@ -206,9 +202,8 @@
       (%namespace-split-qname lexical-name
                               :resource-limits resource-limits
                               :position position)
-    (when (and (not declaration-p)
-               (or (string= local-name "xmlns")
-                   (and prefix (string= prefix "xmlns"))))
+    (when (or (string= local-name "xmlns")
+              (and prefix (string= prefix "xmlns")))
       (%namespace-error (xml-message :xmlns-name-reserved)
                         :prefix prefix :namespace-uri +xmlns-namespace-uri+
                         :position position))
@@ -217,10 +212,6 @@
           (unless (and (%namespace-binding-present-p context prefix)
                        (plusp (length uri)))
             (%namespace-error (xml-message :prefix-not-bound)
-                              :prefix prefix :namespace-uri uri :position position))
-          (when (and (string= prefix "xml")
-                     (not (string= uri +xml-namespace-uri+)))
-            (%namespace-error (xml-message :xml-prefix-fixed-uri)
                               :prefix prefix :namespace-uri uri :position position))
           (make-xml-name :local-name local-name :namespace-uri uri :prefix prefix))
         (let ((uri (if attribute-p
@@ -241,11 +232,7 @@
   "Signal Unique Att Spec when ATTRIBUTES share an expanded name."
   (let ((seen nil))
     (dolist (attribute attributes attributes)
-      (unless (xml-attribute-p attribute)
-        (xml-error 'xml-input-error :attribute-required))
       (let ((name (xml-attribute-name attribute)))
-        (unless (xml-name-p name)
-          (xml-error 'xml-input-error :attribute-name-required))
         (let ((key (%namespace-expanded-name-key name)))
           (when (member key seen :test #'equal)
             (xml-error 'xml-well-formedness-error :duplicate-expanded-attribute

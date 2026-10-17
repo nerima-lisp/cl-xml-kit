@@ -121,9 +121,6 @@
                      :entity-reference ";")))
 
 (defun %parse-character-reference (body context)
-  (when (zerop (length body))
-    (%entity-error context (xml-message :character-reference-empty)
-                   :character-reference))
   (let* ((hex-p (and (> (length body) 2)
                      (char= (char body 0) #\#)
                      (char= (char body 1) #\x)))
@@ -135,9 +132,6 @@
                        (t nil))))
     (unless digits
       (%entity-error context (xml-message :malformed-character-reference)
-                     :character-reference))
-    (when (zerop (length digits))
-      (%entity-error context (xml-message :character-reference-no-digits)
                      :character-reference))
     (let ((value 0)
           (radix (if hex-p 16 10)))
