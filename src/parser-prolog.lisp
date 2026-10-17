@@ -4,10 +4,11 @@
   "Return the root-name and internal-subset bounds of a DOCTYPE token BODY.
 
 The values are the root-name start and end, then the internal-subset start and
-end, which are NIL when BODY has no internal subset."
+end, which are NIL when BODY has no internal subset. The tokenizer has checked
+that BODY holds a root Name after its leading space."
   (let ((length (length body))
         (index 0))
-    (loop while (and (< index length) (xml-space-char-p (char body index)))
+    (loop while (xml-space-char-p (char body index))
           do (incf index))
     (let ((start index))
       (loop while (and (< index length)
@@ -32,9 +33,6 @@ end, which are NIL when BODY has no internal subset."
   (let ((body (xml-token-value token)))
     (multiple-value-bind (start index subset-start subset-end)
         (%doctype-body-layout body)
-      (when (= start index)
-        (%parser-token-error parser token (xml-message :doctype-needs-root-name)
-                             :doctype :name))
       (let ((root-name (subseq body start index)))
         (%parser-check-external-dtd parser token body root-name index)
         (when (xml-parser-doctype-seen parser)
@@ -150,7 +148,7 @@ Return the value and the index after its closing quote."
     (%parser-token-error parser token (xml-message :single-root)
                          :well-formedness :single-root))
   (setf (xml-parser-root-seen parser) t)
-  (let ((name (%parser-expect-name parser (xml-message :expected-root-name) :start-tag))
+  (let ((name (%parser-next-token parser))
         (root (xml-parser-doctype-root parser)))
     (when (and root (not (string= (xml-token-value name) root)))
       (%parser-token-error parser name (xml-message :root-doctype-mismatch)

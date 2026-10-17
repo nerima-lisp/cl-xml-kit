@@ -60,16 +60,15 @@ still due."
          :source (xml-parser-source-name parser)
          :position (or position (%parser-current-position parser))))
 
-(defun %parser-well-formedness-error (parser message constraint expected
-                                      &optional position)
+(defun %parser-well-formedness-error (parser message constraint expected position)
   (error 'xml-well-formedness-error
          :message message :constraint constraint :expected expected
          :source (xml-parser-source-name parser)
-         :position (or position (%parser-current-position parser))))
+         :position position))
 
 (defun %parser-token-error (parser token message constraint expected)
   (%parser-well-formedness-error parser message constraint expected
-                                  (and token (xml-token-position token))))
+                                  (xml-token-position token)))
 
 (defun %parser-event (parser type &key name attributes text target position)
   "Return the event of TYPE that the parser hands to its consumer.
@@ -99,9 +98,3 @@ entity ends the current character run."
         (make-xml-tokenizer source
                             :source (xml-parser-source-name parser)
                             :limits (xml-parser-limits parser))))
-
-(defun %parser-expect-name (parser message constraint)
-  (let ((token (%parser-next-token parser)))
-    (unless (eq (xml-token-kind token) :name)
-      (%parser-token-error parser token message constraint :name))
-    token))

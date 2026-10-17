@@ -22,48 +22,29 @@
         (%parser-limit-error parser :max-text-node-length length limit position))
       (%parser-event parser :characters :text data :position position))))
 
-(defun %parser-attribute-value-token (parser)
-  (let ((token (%parser-next-token parser)))
-    (unless (eq (xml-token-kind token) :quoted-value)
-      (%parser-token-error parser token
-                           (xml-message :expected-quoted-attribute-value)
-                           :attribute-value :quoted-value))
-    token))
-
 (defun %parser-collect-attributes (parser)
   "Read a start tag through its close and return the raw (NAME . VALUE) entries,
-the close token kind, and the close position."
+the close token kind, and the close position.
+
+The tokenizer yields a start tag only as names, each followed by an equals sign
+and a quoted value, then a close, so the token order needs no check here."
   (let ((entries nil) (name nil) (count 0)
         (limit (xml-resource-limits-max-attributes-per-element
                 (xml-parser-limits parser))))
     (loop for token = (%parser-next-token parser)
-          do (case (xml-token-kind token)
+          do (ecase (xml-token-kind token)
                (:equals
-                (let ((value-token (%parser-attribute-value-token parser)))
+                (let ((value-token (%parser-next-token parser)))
                   (when (> (incf count) limit)
                     (%parser-limit-error parser :max-attributes-per-element count limit))
                   (push (cons name (expand-xml-entity-references
                                     (xml-token-value value-token)
                                     (xml-parser-entities parser) :attribute-p t))
-                        entries))
-                (setf name nil))
-               (:name
-                (when name
-                  (%parser-token-error parser token
-                                       (xml-message :expected-equals-after-attribute)
-                                       :attribute :equals))
-                (setf name (xml-token-value token)))
+                        entries)))
+               (:name (setf name (xml-token-value token)))
                ((:tag-close :empty-element-close)
-                (when name
-                  (%parser-token-error parser token
-                                       (xml-message :expected-equals-after-attribute)
-                                       :attribute :equals))
                 (return (values (nreverse entries) (xml-token-kind token)
-                                (xml-token-position token))))
-               (otherwise
-                (%parser-token-error parser token
-                                     (xml-message :unexpected-token-in-start-tag)
-                                     :start-tag :attribute-or-close))))))
+                                (xml-token-position token))))))))
 
 (defun %parser-start-element (parser name-token)
   "Read the start tag named by NAME-TOKEN, open its frame, and return its event."
@@ -113,9 +94,6 @@ the close token kind, and the close position."
       (%parser-token-error parser name-token (xml-message :end-tag-mismatch)
                            :element-type-match (xml-parser-frame-lexical-name frame)))
     (let ((close (%parser-next-token parser)))
-      (unless (eq (xml-token-kind close) :tag-close)
-        (%parser-token-error parser close (xml-message :expected-close-after-end-tag)
-                             :end-tag :tag-close))
       (pop (xml-parser-stack parser))
       ;; Only a root with an end tag sets ROOT-CLOSED, so a reference after an
       ;; empty root is still accepted as document text.
@@ -204,11 +182,9 @@ Under the :REJECT policy this signals instead."
                                     :position (xml-token-position token)))
     (:processing-instruction (%parser-pi parser token))
     (:start-tag-open
-     (%parser-start-element
-      parser (%parser-expect-name parser (xml-message :expected-element-name) :start-tag)))
+     (%parser-start-element parser (%parser-next-token parser)))
     (:end-tag-open
-     (%parser-end-element
-      parser (%parser-expect-name parser (xml-message :expected-end-tag-name) :end-tag)))
+     (%parser-end-element parser (%parser-next-token parser)))
     (:eof (%parser-content-end parser token))
     (otherwise
      (%parser-token-error parser token (xml-message :unexpected-token-in-content)
