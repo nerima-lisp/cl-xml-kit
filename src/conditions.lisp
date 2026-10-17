@@ -30,7 +30,7 @@
              :documentation "The unsupported encoding designator or name.")
    (reason :initarg :reason :initform nil :reader xml-unsupported-encoding-reason
            :documentation "The reason this encoding is outside the XML profile."))
-  (:documentation "An input declares or uses an encoding outside the UTF-8 profile."))
+  (:documentation "An input declares or uses an encoding outside the supported UTF-8 and UTF-16 inputs."))
 
 (define-condition xml-parse-error (xml-kit-error) ()
   (:documentation "Base condition for XML grammar and parser-state failures."))
