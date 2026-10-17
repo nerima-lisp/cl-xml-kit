@@ -1,3 +1,5 @@
+;;;; src/serializer.lisp
+
 (in-package #:cl-xml-kit)
 
 (defun %serializer-state (stream &key pretty-print indent resource-limits canonical)
@@ -12,11 +14,8 @@
   (%make-xml-serializer-state stream resource-limits pretty-print indent canonical 0 0))
 
 (defun %write-xml (object stream &key (pretty-print nil) (indent 2)
-                                           resource-limits (canonical nil))
-  (unless (or (xml-document-p object) (xml-element-p object)
-              (xml-attribute-p object) (xml-text-p object)
-              (xml-comment-p object) (xml-processing-instruction-p object)
-              (xml-doctype-p object))
+                          resource-limits (canonical nil))
+  (unless (xml-node-p object)
     (%serializer-error object nil (xml-message :object-not-serializable)))
   (let ((state (%serializer-state stream :pretty-print pretty-print
                                   :indent indent :resource-limits resource-limits
