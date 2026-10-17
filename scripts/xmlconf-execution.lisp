@@ -2,26 +2,28 @@
 
 (in-package #:cl-xml-kit/xmlconf)
 
-(defun unsupported-encoding-bom-p (path)
+(defun read-octets-file (path)
   (with-open-file (stream path :direction :input
                           :element-type '(unsigned-byte 8))
-    (let ((octets (make-array 4 :element-type '(unsigned-byte 8)
-                              :initial-element 0)))
-      (let ((count (read-sequence octets stream)))
-        (or (and (>= count 2)
-                 (or (and (= (aref octets 0) #xFE)
-                          (= (aref octets 1) #xFF))
-                     (and (= (aref octets 0) #xFF)
-                          (= (aref octets 1) #xFE))))
-            (and (= count 4)
-                 (or (and (= (aref octets 0) 0)
-                          (= (aref octets 1) 0)
-                          (= (aref octets 2) #xFE)
-                          (= (aref octets 3) #xFF))
-                     (and (= (aref octets 0) #xFF)
-                          (= (aref octets 1) #xFE)
-                          (= (aref octets 2) 0)
-                          (= (aref octets 3) 0)))))))))
+    (let ((octets (make-array (file-length stream)
+                              :element-type '(unsigned-byte 8))))
+      (read-sequence octets stream)
+      octets)))
+
+(defun bom-decoded-text (octets)
+  "Return OCTETS decoded as UTF-16 when a UTF-16 byte order mark selects it,
+and as UTF-8 otherwise."
+  (flet ((starts-with-p (first second)
+           (and (>= (length octets) 2)
+                (= first (aref octets 0))
+                (= second (aref octets 1)))))
+    (cond
+      ((starts-with-p #xFE #xFF)
+       (sb-ext:octets-to-string octets :external-format :utf-16be :start 2))
+      ((starts-with-p #xFF #xFE)
+       (sb-ext:octets-to-string octets :external-format :utf-16le :start 2))
+      (t
+       (sb-ext:octets-to-string octets :external-format :utf-8)))))
 
 (defun xmlconf-external-resource-declaration-p (text)
   (labels ((resource-keyword-after-p (marker)
@@ -32,22 +34,18 @@
         (resource-keyword-after-p (search "<!ENTITY" text :test #'char-equal)))))
 
 (defun xmlconf-profile-skip-reason (source)
-  (cond
-    ((unsupported-encoding-bom-p source)
-     "input encoding is outside the UTF-8 profile")
-    (t
-     (handler-case
-         (let ((text (read-text-file source)))
-           (cond
-             ((search "version=\"1.1\"" text :test #'char-equal)
-              "XML 1.1 is outside the XML 1.0 profile")
-             ((xmlconf-external-resource-declaration-p text)
-               "external DTD or entity resolution is disabled by policy")
-              ((or (search "<!ELEMENT" text :test #'char-equal)
-                   (search "<!ATTLIST" text :test #'char-equal)
-                   (search "<!NOTATION" text :test #'char-equal))
-               "DTD validation declarations are outside the non-validating profile")))
-       (error () nil)))))
+  (handler-case
+      (let ((text (bom-decoded-text (read-octets-file source))))
+        (cond
+          ((search "version=\"1.1\"" text :test #'char-equal)
+           "XML 1.1 is outside the XML 1.0 profile")
+          ((xmlconf-external-resource-declaration-p text)
+           "external DTD or entity resolution is disabled by policy")
+          ((or (search "<!ELEMENT" text :test #'char-equal)
+               (search "<!ATTLIST" text :test #'char-equal)
+               (search "<!NOTATION" text :test #'char-equal))
+           "DTD validation declarations are outside the non-validating profile")))
+    (error () nil)))
 
 (defun xmlconf-namespace-invalid-case-p (case)
   (let ((test (xmlconf-case-result-test case)))
@@ -82,7 +80,7 @@
 
 (defun parse-file (path)
   (funcall (parser-function "PARSE-XML")
-           (read-text-file path)
+           (read-octets-file path)
            :source-name (namestring path)))
 
 (defun output-mismatch (test document)
