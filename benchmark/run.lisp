@@ -12,9 +12,6 @@
 (defconstant +mib+ (* 1024 1024))
 (defconstant +max-pull-events+ 1000000)
 
-(defparameter *command-timeout-seconds* 30
-  "Seconds a metadata command may run before it is killed.")
-
 (defstruct workload id input)
 (defstruct benchmark-case id operation workload input-bytes thunk validator)
 (defstruct (rng (:constructor make-rng-state (state))) state)
@@ -275,54 +272,32 @@
            (write-string (tsv-field field)))
   (terpri))
 
-(defun command-output (program arguments)
-  "Return the combined output of PROGRAM, or NIL when it cannot be started.
-Kill its process group and signal an error after *COMMAND-TIMEOUT-SECONDS*."
-  (let ((process (handler-case
-                     (sb-ext:run-program program arguments
-                                         :search t :wait nil
-                                         :directory (namestring *benchmark-root*)
-                                         :input nil :output :stream :error :output)
-                   (error () nil)))
-        (finished nil))
-    (when process
-      (unwind-protect
-           (handler-case
-               (sb-ext:with-timeout *command-timeout-seconds*
-                 (prog1 (uiop:slurp-input-stream :string (sb-ext:process-output process))
-                   (sb-ext:process-wait process)
-                   (setf finished t)))
-             (sb-ext:timeout ()
-               (error "Benchmark metadata command ~A did not finish within ~D second~:P"
-                      program *command-timeout-seconds*)))
-        ;; :INPUT NIL makes the child a group leader; waiting reaps it after the kill.
-        (unless finished
-          (sb-ext:process-kill process 9 :process-group)
-          (sb-ext:process-wait process))
-        (sb-ext:process-close process)))))
-
-(defun command-text (program arguments &optional (empty-value "unknown"))
-  (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return)
-                              (or (command-output program arguments) ""))))
-    (if (plusp (length trimmed)) trimmed empty-value)))
-
 (defun source-value (relative-path)
+  "Return the hexadecimal MD5 digest of RELATIVE-PATH, or unknown when the
+file is absent."
   (let ((path (merge-pathnames relative-path *benchmark-root*)))
     (if (probe-file path)
-        (command-text "shasum" (list "-a" "256" (namestring path)))
+        (format nil "~(~{~2,'0X~}~)" (coerce (sb-md5:md5sum-file path) 'list))
         "unknown")))
 
-(defun metadata (seed operations workloads warmups samples)
+(defun source-revision ()
+  "Return the revision the caller passed in BENCH_REVISION, or unknown."
+  (let ((revision (string-trim '(#\Space #\Tab) (or (uiop:getenv "BENCH_REVISION") ""))))
+    (if (plusp (length revision)) revision "unknown")))
+
+(defun source-state ()
+  "Return the working-tree state the caller passed in BENCH_SOURCE_STATE."
+  (let ((state (or (uiop:getenv "BENCH_SOURCE_STATE") "unknown")))
+    (unless (member state '("clean" "dirty" "unknown") :test #'string=)
+      (error "BENCH_SOURCE_STATE must be clean, dirty, or unknown, got ~S" state))
+    state))
+
+(defun metadata (seed operations workloads warmups samples revision state)
   (list (list "schema" "cl-xml-kit-benchmark")
-        (list "schema_version" "1")
+        (list "schema_version" "2")
         (list "source_root" (namestring *benchmark-root*))
-        (list "revision" (command-text "git" (list "rev-parse" "HEAD")))
-        (list "revision_tree" (command-text "git" (list "rev-parse" "HEAD^{tree}")))
-        (list "git_dirty"
-              (let ((status (command-text "git" (list "status" "--porcelain") "")))
-                (if (string= status "unknown")
-                    "unknown"
-                    (if (plusp (length status)) "dirty" "clean"))))
+        (list "revision" revision)
+        (list "source_state" state)
         (list "sbcl" (lisp-implementation-version))
         (list "lisp_implementation" (lisp-implementation-type))
         (list "host" (machine-instance))
@@ -336,6 +311,7 @@ Kill its process group and signal an error after *COMMAND-TIMEOUT-SECONDS*."
         (list "sample_rounds" samples)
         (list "timer_units_per_second" internal-time-units-per-second)
         (list "allocation_counter" "sb-ext:get-bytes-consed")
+        (list "hash_algorithm" "md5")
         (list "hash_benchmark_package" (source-value "benchmark/package.lisp"))
         (list "hash_benchmark_run" (source-value "benchmark/run.lisp"))
         (list "hash_benchmark_readme" (source-value "benchmark/README.md"))))
@@ -369,8 +345,8 @@ Kill its process group and signal an error after *COMMAND-TIMEOUT-SECONDS*."
   (let* ((seed (setting-integer "BENCH_SEED" 20261007 0))
          (warmups (setting-integer "BENCH_WARMUP" 2 2))
          (samples (setting-integer "BENCH_SAMPLES" 10 10))
-         (*command-timeout-seconds* (setting-integer "BENCH_COMMAND_TIMEOUT"
-                                                     *command-timeout-seconds* 1))
+         (revision (source-revision))
+         (state (source-state))
          (operations (split-selection "BENCH_OPERATIONS"
                                       (or (uiop:getenv "BENCH_OPERATIONS") "all")))
          (workload-selection (split-selection "BENCH_WORKLOADS"
@@ -395,6 +371,7 @@ Kill its process group and signal an error after *COMMAND-TIMEOUT-SECONDS*."
       (dotimes (round warmups) (run-round "warmup" round nil))
       (dotimes (round samples) (run-round "sample" round t)))
     (emit-report cases sample-table (nreverse orders)
-                 (metadata seed operations workload-selection warmups samples))
+                 (metadata seed operations workload-selection warmups samples
+                           revision state))
     t))
 

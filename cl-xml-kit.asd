@@ -111,7 +111,7 @@
   :version "1.0.0"
   :homepage "https://github.com/nerima-lisp/cl-xml-kit"
   :source-control (:git "https://github.com/nerima-lisp/cl-xml-kit.git")
-  :depends-on ("cl-xml-kit")
+  :depends-on ("cl-xml-kit" (:require "sb-md5"))
   :pathname "benchmark"
   :serial t
   :components ((:file "package")
