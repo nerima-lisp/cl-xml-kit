@@ -139,6 +139,9 @@ and as UTF-8 otherwise."
               (format nil "exceeded the ~D second case time limit" seconds)))))
 
 (defun execute-xmlconf (analysis case-timeout)
+  ;; Load the parser before the first case starts its time limit; a timeout
+  ;; that interrupts ASDF leaves a partly loaded system for every later case.
+  (load-parser-api)
   (let ((passed 0)
         (failed 0)
         (skipped 0))
