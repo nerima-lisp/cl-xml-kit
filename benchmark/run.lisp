@@ -4,25 +4,20 @@
 
 (in-package #:cl-xml-kit/benchmark)
 
+;; *LOAD-TRUENAME* names the FASL cache when ASDF loads this file, so the
+;; source root comes from the system definition.
 (defparameter *benchmark-root*
-  (uiop:pathname-parent-directory-pathname
-   (uiop:pathname-directory-pathname
-    (or *load-truename* *compile-file-truename*
-        (error "benchmark/run.lisp has no load pathname")))))
+  (asdf:system-source-directory "cl-xml-kit/benchmark"))
 
 (defconstant +mib+ (* 1024 1024))
 (defconstant +max-pull-events+ 1000000)
 
+(defparameter *command-timeout-seconds* 30
+  "Seconds a metadata command may run before it is killed.")
+
 (defstruct workload id input)
 (defstruct benchmark-case id operation workload input-bytes thunk validator)
 (defstruct (rng (:constructor make-rng-state (state))) state)
-
-(defun env (name)
-  (uiop:getenv name))
-
-(defun ensure-sbcl ()
-  #+sbcl t
-  #-sbcl (error "The cl-xml-kit benchmark requires SBCL for allocation data."))
 
 (defun parse-nonnegative-integer (name text)
   (unless (and text (plusp (length text))
@@ -33,10 +28,10 @@
     (error "~A must contain a non-negative decimal integer, got ~S" name text))
   (parse-integer text))
 
-(defun setting-integer (name fallback minimum &optional alias)
-  (let ((text (or (env name) (and alias (env alias)))))
+(defun setting-integer (name fallback minimum)
+  (let ((text (uiop:getenv name)))
     (let ((value (if text
-                     (parse-nonnegative-integer (or name alias) text)
+                     (parse-nonnegative-integer name text)
                      fallback)))
       (unless (>= value minimum)
         (error "~A must be at least ~D, got ~D" name minimum value))
@@ -87,22 +82,11 @@
 (defun api-call (name operation &rest arguments)
   (apply (api-function name operation) arguments))
 
-(defun api-type-p (name value)
-  (let ((package (find-package "CL-XML-KIT")))
-    (when package
-      (multiple-value-bind (symbol status) (find-symbol name package)
-        (when (and status (fboundp symbol))
-          (funcall (symbol-function symbol) value))))))
-
 (defun assert-document (document operation)
   (unless document
     (error "Correctness preflight ~A returned NIL" operation))
-  (when (and (find-package "CL-XML-KIT")
-             (multiple-value-bind (symbol status)
-                 (find-symbol "XML-DOCUMENT-P" "CL-XML-KIT")
-               (and status (fboundp symbol))))
-    (unless (api-type-p "XML-DOCUMENT-P" document)
-      (error "Correctness preflight ~A returned a non-document" operation)))
+  (unless (api-call "XML-DOCUMENT-P" operation document)
+    (error "Correctness preflight ~A returned a non-document" operation))
   document)
 
 (defun xml->octets (string)
@@ -113,14 +97,12 @@
     octets))
 
 (defun make-text-xml (seed)
-  (let ((target +mib+)
-        (token (format nil "seed-~D" (mod seed 1000000))))
+  "Return a document whose text node is +MIB+ characters, the default limit."
+  (let ((token (format nil "seed-~D" (mod seed 1000000))))
     (with-output-to-string (stream)
       (write-string "<root><text>" stream)
-      (loop with count = 0
-            while (< count target)
-            do (write-string token stream)
-               (incf count (length token)))
+      (loop for remaining downfrom +mib+ above 0 by (length token)
+            do (write-string token stream :end (min (length token) remaining)))
       (write-string "</text></root>" stream))))
 
 (defun make-deep-xml (&optional (depth 512))
@@ -156,10 +138,6 @@
         (make-workload :id "namespaces" :input (make-namespace-xml))
         (make-workload :id "mixed-content" :input (make-mixed-xml seed))))
 
-(defun validate-parse-result (value operation)
-  (assert-document value operation)
-  t)
-
 (defun make-parse-case (workload input operation)
   (make-benchmark-case
    :id (format nil "~A/~A" operation (workload-id workload))
@@ -168,8 +146,18 @@
    :input-bytes (length input)
    :thunk (lambda () (api-call "PARSE-XML" operation input))
    :validator (lambda ()
-                (validate-parse-result
+                (assert-document
                  (api-call "PARSE-XML" operation input) operation))))
+
+(defun count-pull-events (input)
+  (let ((parser (api-call "MAKE-XML-PARSER" "pull-events" input))
+        (count 0))
+    (loop while (not (api-call "XML-PARSER-EOF-P" "pull-events" parser))
+          do (api-call "NEXT-XML-EVENT" "pull-events" parser)
+             (incf count)
+             (when (> count +max-pull-events+)
+               (error "pull-events exceeded the event safety bound")))
+    count))
 
 (defun make-pull-case (workload)
   (let ((input (workload-input workload)))
@@ -178,28 +166,12 @@
      :operation "pull-events"
      :workload (workload-id workload)
      :input-bytes (length input)
-     :thunk
-     (lambda ()
-       (let ((parser (api-call "MAKE-XML-PARSER" "pull-events" input))
-             (count 0))
-         (loop while (not (api-call "XML-PARSER-EOF-P" "pull-events" parser))
-               do (api-call "NEXT-XML-EVENT" "pull-events" parser)
-                  (incf count)
-                  (when (> count +max-pull-events+)
-                    (error "pull-events exceeded the event safety bound")))
-         count))
+     :thunk (lambda () (count-pull-events input))
      :validator
      (lambda ()
-       (let ((parser (api-call "MAKE-XML-PARSER" "pull-events" input))
-             (count 0))
-         (loop while (not (api-call "XML-PARSER-EOF-P" "pull-events" parser))
-               do (api-call "NEXT-XML-EVENT" "pull-events" parser)
-                  (incf count)
-                  (when (> count +max-pull-events+)
-                    (error "pull-events correctness preflight exceeded bound")))
-         (unless (plusp count)
-           (error "pull-events correctness preflight produced no events"))
-         t)))))
+       (unless (plusp (count-pull-events input))
+         (error "pull-events correctness preflight produced no events"))
+       t))))
 
 (defun make-serialize-case (workload)
   (let* ((input (workload-input workload))
@@ -217,7 +189,7 @@
        (let ((serialized (api-call "XML->STRING" "serialize" document)))
          (unless (and (stringp serialized) (plusp (length serialized)))
            (error "serialization correctness preflight returned empty output"))
-         (validate-parse-result
+         (assert-document
           (api-call "PARSE-XML" "serialize-round-trip" serialized)
           "serialize-round-trip"))))))
 
@@ -258,18 +230,18 @@
   t)
 
 (defun measure-sample (case)
-  #+sbcl (sb-ext:gc :full t)
+  (sb-ext:gc :full t)
   (let* ((start-time (get-internal-real-time))
-         #+sbcl (start-bytes (sb-ext:get-bytes-consed))
+         (start-bytes (sb-ext:get-bytes-consed))
          (value (funcall (benchmark-case-thunk case)))
          (end-time (get-internal-real-time))
-         #+sbcl (end-bytes (sb-ext:get-bytes-consed))
+         (end-bytes (sb-ext:get-bytes-consed))
          (ticks (- end-time start-time))
          (seconds (/ ticks (float internal-time-units-per-second 1d0))))
     (declare (ignore value))
     (list :ticks ticks
           :seconds seconds
-          :allocation-bytes #+sbcl (- end-bytes start-bytes) #-sbcl 0)))
+          :allocation-bytes (- end-bytes start-bytes))))
 
 (defun median (numbers)
   (let ((sorted (sort (copy-seq numbers) #'<)))
@@ -303,17 +275,36 @@
            (write-string (tsv-field field)))
   (terpri))
 
+(defun command-output (program arguments)
+  "Return the combined output of PROGRAM, or NIL when it cannot be started.
+Kill its process group and signal an error after *COMMAND-TIMEOUT-SECONDS*."
+  (let ((process (handler-case
+                     (sb-ext:run-program program arguments
+                                         :search t :wait nil
+                                         :directory (namestring *benchmark-root*)
+                                         :input nil :output :stream :error :output)
+                   (error () nil)))
+        (finished nil))
+    (when process
+      (unwind-protect
+           (handler-case
+               (sb-ext:with-timeout *command-timeout-seconds*
+                 (prog1 (uiop:slurp-input-stream :string (sb-ext:process-output process))
+                   (sb-ext:process-wait process)
+                   (setf finished t)))
+             (sb-ext:timeout ()
+               (error "Benchmark metadata command ~A did not finish within ~D second~:P"
+                      program *command-timeout-seconds*)))
+        ;; :INPUT NIL makes the child a group leader; waiting reaps it after the kill.
+        (unless finished
+          (sb-ext:process-kill process 9 :process-group)
+          (sb-ext:process-wait process))
+        (sb-ext:process-close process)))))
+
 (defun command-text (program arguments &optional (empty-value "unknown"))
-  (handler-case
-      (let ((text (uiop:run-program (cons program arguments)
-                                    :directory *benchmark-root*
-                                    :output :string
-                                    :error-output :output
-                                    :ignore-error-status t)))
-        (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return)
-                                    (or text ""))))
-          (if (plusp (length trimmed)) trimmed empty-value)))
-    (error () empty-value)))
+  (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return)
+                              (or (command-output program arguments) ""))))
+    (if (plusp (length trimmed)) trimmed empty-value)))
 
 (defun source-value (relative-path)
   (let ((path (merge-pathnames relative-path *benchmark-root*)))
@@ -375,14 +366,15 @@
 
 (defun main ()
   "Run correctness preflight, warmups, and reproducible benchmark samples."
-  (ensure-sbcl)
   (let* ((seed (setting-integer "BENCH_SEED" 20261007 0))
          (warmups (setting-integer "BENCH_WARMUP" 2 2))
-         (samples (setting-integer "BENCH_SAMPLES" 10 10 "BENCH_ITERATIONS"))
+         (samples (setting-integer "BENCH_SAMPLES" 10 10))
+         (*command-timeout-seconds* (setting-integer "BENCH_COMMAND_TIMEOUT"
+                                                     *command-timeout-seconds* 1))
          (operations (split-selection "BENCH_OPERATIONS"
-                                      (or (env "BENCH_OPERATIONS") "all")))
+                                      (or (uiop:getenv "BENCH_OPERATIONS") "all")))
          (workload-selection (split-selection "BENCH_WORKLOADS"
-                                              (or (env "BENCH_WORKLOADS") "all")))
+                                              (or (uiop:getenv "BENCH_WORKLOADS") "all")))
          (cases (make-cases seed operations workload-selection))
          (random-state (make-rng seed))
          (sample-table (make-hash-table :test #'eq))
