@@ -2,63 +2,53 @@
 
 (defstruct (xml-parser-frame
             (:constructor %make-xml-parser-frame
-                (lexical-name name attributes namespace-declarations context
-                 children position empty-p text-length element end-position))
+                (lexical-name name namespace-declarations context end-position))
             (:copier nil))
-  "Mutable state for one open XML element."
-  (lexical-name "" :read-only t)
+  "One open element, or the boundary of an entity replacement when NAME is NIL.
+
+END-POSITION is the position of `/>` for an empty element and NIL otherwise."
+  (lexical-name nil :read-only t)
   (name nil :read-only t)
-  (attributes nil :read-only t)
   (namespace-declarations nil :read-only t)
   (context nil :read-only t)
-  (children nil)
-  (position nil :read-only t)
-  (empty-p nil :read-only t)
-  (text-length 0)
-  (element nil)
-  (end-position nil))
+  (end-position nil :read-only t))
 
 (defstruct (xml-parser
             (:constructor %make-xml-parser
                 (input source-name limits external-entity-policy tokenizer
-                 position line column start-position phase stack document-children
-                 queue eof fatal root-seen root-closed doctype-root doctype-seen
-                 element-count entities entity-expansions expanded-characters
-                 entity-depth tokenizer-stack queue-tail))
+                 start-position entities))
             (:copier nil))
-  "Mutable forward-only parser state owned by the pull reader."
+  "Forward-only parser state; it is also the continuation of the parse.
+
+PHASE is :START before the start-document event, :RUNNING while tokens are
+read, :EMPTY-END between the start and end events of an empty element, and
+:DONE after the end-document event. STACK holds the open frames, innermost
+first, and DEPTH counts the element frames among them. TEXT-LENGTH is the
+length of the character run the current events continue. TOKEN-OBSERVER, when
+set, is called with each token read from the document itself, before the
+parser interprets it."
   (input "" :read-only t)
   (source-name nil :read-only t)
   (limits nil :read-only t)
   (external-entity-policy :reject :read-only t)
   (tokenizer nil)
   (tokenizer-stack nil)
-  (position 0)
-  (line 1)
-  (column 1)
   (start-position nil :read-only t)
-  (phase :prolog)
+  (phase :start)
   (stack nil)
-  (document-children nil)
-  (queue nil)
-  (queue-tail nil)
-  (eof nil)
+  (depth 0)
   (fatal nil)
   (root-seen nil)
   (root-closed nil)
   (doctype-root nil)
   (doctype-seen nil)
   (element-count 0)
+  (text-length 0)
   (entities nil)
-  (entity-expansions 0)
-  (expanded-characters 0)
-  (entity-depth 0))
+  (token-observer nil))
 
 (defun %parser-current-position (parser)
-  (make-xml-position :source (xml-parser-source-name parser)
-                     :offset (xml-parser-position parser)
-                     :line (xml-parser-line parser)
-                     :column (xml-parser-column parser)))
+  (%xml-tokenizer-current-position (xml-parser-tokenizer parser)))
 
 (defun %parser-limit-error (parser kind value limit &optional position)
   (error 'xml-resource-limit-exceeded
@@ -74,3 +64,41 @@
          :source (xml-parser-source-name parser)
          :position (or position (%parser-current-position parser))))
 
+(defun %parser-token-error (parser token message constraint expected)
+  (%parser-well-formedness-error parser message constraint expected
+                                  (and token (xml-token-position token))))
+
+(defun %parser-event (parser type &key name attributes text target position)
+  "Return the event of TYPE that the parser hands to its consumer.
+
+Every parser event is made here. An event other than characters or a skipped
+entity ends the current character run."
+  (unless (or (eq type :characters) (eq type :skipped-external-entity))
+    (setf (xml-parser-text-length parser) 0))
+  (%make-xml-event type name attributes text target position
+                   (eq type :skipped-external-entity)))
+
+(defun %parser-next-token (parser)
+  "Return the next token, leaving an entity replacement at its EOF token."
+  (let ((token (next-xml-token (xml-parser-tokenizer parser)))
+        (observer (xml-parser-token-observer parser)))
+    (if (xml-parser-tokenizer-stack parser)
+        (when (eq (xml-token-kind token) :eof)
+          (setf (xml-parser-tokenizer parser)
+                (pop (xml-parser-tokenizer-stack parser))))
+        (when observer
+          (funcall observer token)))
+    token))
+
+(defun %parser-push-tokenizer (parser source)
+  (push (xml-parser-tokenizer parser) (xml-parser-tokenizer-stack parser))
+  (setf (xml-parser-tokenizer parser)
+        (make-xml-tokenizer source
+                            :source (xml-parser-source-name parser)
+                            :limits (xml-parser-limits parser))))
+
+(defun %parser-expect-name (parser message constraint)
+  (let ((token (%parser-next-token parser)))
+    (unless (eq (xml-token-kind token) :name)
+      (%parser-token-error parser token message constraint :name))
+    token))

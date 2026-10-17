@@ -10,6 +10,7 @@
       (:label-must-not-be-empty "~A must not be empty.")
       (:label-must-not-contain-colon "~A must not contain a colon.")
       (:label-must-be-list "~A must be a list.")
+      (:label-must-be-function "~A must be a function designator.")
       (:label-must-be-xml-name "~A must be an XML-NAME.")
       (:label-must-be-xml-position "~A must be an XML-POSITION.")
       (:label-must-be-resource-limits "~A must be XML-RESOURCE-LIMITS.")

@@ -5,6 +5,7 @@
   (:export
    ;; Parsing and pull events
    #:parse-xml #:make-xml-parser #:next-xml-event #:xml-parser-eof-p
+   #:map-xml-events #:do-xml-events
    #:xml-event #:make-xml-event #:xml-event-p #:xml-event-type
    #:xml-event-name #:xml-event-attributes #:xml-event-text
    #:xml-event-target #:xml-event-position #:xml-event-external-p
