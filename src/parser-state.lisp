@@ -26,7 +26,9 @@ read, :EMPTY-END between the start and end events of an empty element, and
 first, and DEPTH counts the element frames among them. TEXT-LENGTH is the
 length of the character run the current events continue. TOKEN-OBSERVER, when
 set, is called with each token read from the document itself, before the
-parser interprets it."
+parser interprets it. ENTITY-SKIPS lists, in order, the (OFFSET . NAME) of the
+external entities skipped in the replacement text being read whose events are
+still due."
   (input "" :read-only t)
   (source-name nil :read-only t)
   (limits nil :read-only t)
@@ -45,7 +47,8 @@ parser interprets it."
   (element-count 0)
   (text-length 0)
   (entities nil)
-  (token-observer nil))
+  (token-observer nil)
+  (entity-skips nil))
 
 (defun %parser-current-position (parser)
   (%xml-tokenizer-current-position (xml-parser-tokenizer parser)))

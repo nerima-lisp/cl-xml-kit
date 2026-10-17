@@ -69,15 +69,46 @@
                       (:start-element "r" nil) (:end-element "r" nil)
                       (:skipped-external-entity "x" nil) (:end-document nil nil))))
 
-(it "drops a skipped entity inside an internal entity without an event"
-  ;; The replacement text has no document position, and keeping the reference
-  ;; in it would shift the positions of the content after it.
-  (let ((input (concatenate 'string +skip-doctype+ "<r>&i;</r>")))
-    (expect (mapcar #'event-summary
-                    (parser-events input :external-entity-policy :skip))
+(it "emits one skipped-entity event for a skipped entity in replacement text"
+  (let* ((input (concatenate 'string +skip-doctype+ "<r>&i;</r>"))
+         (events (parser-events input :external-entity-policy :skip))
+         (position (xml-event-position
+                    (find :skipped-external-entity events :key #'xml-event-type))))
+    (expect (mapcar #'event-summary events)
             :to-equal '((:start-document nil nil) (:doctype nil nil)
-                (:start-element "r" nil) (:characters nil "[]")
-                (:end-element "r" nil) (:end-document nil nil)))))
+                        (:start-element "r" nil) (:characters nil "[]")
+                        (:skipped-external-entity "x" nil)
+                        (:end-element "r" nil) (:end-document nil nil)))
+    (expect (list (xml-position-offset position) (xml-position-line position)
+                  (xml-position-column position))
+            :to-equal '(1 1 2))
+    (expect (mapcar #'xml-text-data
+                    (xml-element-children
+                     (first (last (xml-document-children
+                                   (parse-xml input :external-entity-policy :skip))))))
+            :to-equal '("[]"))))
+
+(it "emits skipped-entity events at their places in nested replacement text"
+  (let* ((input (concatenate 'string
+                             "<!DOCTYPE r [<!ENTITY x SYSTEM \"urn:x\">"
+                             "<!ENTITY j \"<q>&x;</q>\"><!ENTITY k \"a&j;&#10;&x;b\">]>"
+                             "<r>&k;</r>"))
+         (events (parser-events input :external-entity-policy :skip)))
+    (expect (mapcar #'event-summary events)
+            :to-equal `((:start-document nil nil) (:doctype nil nil)
+                        (:start-element "r" nil) (:characters nil "a")
+                        (:start-element "q" nil) (:skipped-external-entity "x" nil)
+                        (:end-element "q" nil) (:characters nil ,(format nil "~%b"))
+                        (:skipped-external-entity "x" nil)
+                        (:end-element "r" nil) (:end-document nil nil)))
+    (expect (mapcar (lambda (event)
+                      (let ((position (xml-event-position event)))
+                        (list (xml-position-offset position) (xml-position-line position)
+                              (xml-position-column position))))
+                    (remove-if-not (lambda (event)
+                                     (eq (xml-event-type event) :skipped-external-entity))
+                                   events))
+            :to-equal '((4 1 5) (9 2 1)))))
 
 (it "rejects a colon in a PI target or DOCTYPE name while pulling, as PARSE-XML does"
   (dolist (input '("<?a:b data?><r/>" "<!DOCTYPE a:r><a:r xmlns:a=\"urn:a\"/>"))

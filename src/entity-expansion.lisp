@@ -43,16 +43,24 @@
     (%expand-general-references-into text context stream attribute-p)))
 
 (defun %materialize-entity-reference (body context stream)
+  "Write the expansion of reference BODY to STREAM and return its skipped references.
+
+The result lists (OFFSET . NAME) for each external entity skipped under :SKIP,
+where OFFSET is the position in STREAM at which the entity would begin."
   (let ((character (%reference-character body context)))
     (if character
         (progn
           (when (char= character #\&)
             (%entity-error context (xml-message :unescaped-ampersand-in-replacement)
                            :entity-reference))
-          (%record-expanded-character context character stream nil))
+          (%record-expanded-character context character stream nil)
+          nil)
         (let ((declaration (%declared-entity context body nil)))
           (if (xml-entity-declaration-external-p declaration)
-              (%external-entity-result context declaration)
+              (progn
+                (%external-entity-result context declaration)
+                (list (cons (file-position stream)
+                            (xml-entity-declaration-name declaration))))
               (progn
                 (%begin-entity-expansion context declaration)
                 (unwind-protect
@@ -66,9 +74,11 @@
 
 Character and predefined references are resolved before tokenization so that
 they can produce markup. Internal general entities are expanded recursively;
-the parser then validates the resulting replacement as XML content."
+the parser then validates the resulting replacement as XML content. Return the
+skipped external references, as for `%materialize-entity-reference`, in order."
   (let ((length (length text))
-        (position 0))
+        (position 0)
+        (skipped nil))
     (loop while (< position length)
           do (let ((character (char text position)))
                (if (char/= character #\&)
@@ -76,6 +86,9 @@ the parser then validates the resulting replacement as XML content."
                      (%record-expanded-character context character stream nil)
                      (incf position))
                    (let ((end (%entity-reference-end text (1+ position) context)))
-                     (%materialize-entity-reference (subseq text (1+ position) end)
-                                                    context stream)
-                     (setf position (1+ end))))))))
+                     (setf skipped
+                           (nconc skipped
+                                  (%materialize-entity-reference
+                                   (subseq text (1+ position) end) context stream)))
+                     (setf position (1+ end))))))
+    skipped))

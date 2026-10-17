@@ -98,6 +98,17 @@ The default external-resource policy is `:reject`. `:skip` is available only
 for callers that explicitly accept a non-expanding event stream. There is no
 `:resolve` policy in 1.0.
 
+Under `:skip`, each reference to an external entity in content or after the
+root element yields one `:skipped-external-entity` event, including a reference
+inside the replacement text of an internal entity. Events read from
+replacement text carry positions in that text after its character and
+internal entity references are expanded; a position does not record which text
+it indexes. A skipped reference inside replacement text is reported at the
+first token boundary at or after it: an internal entity whose replacement text
+is `[&x;]` yields the characters `[]` and then the skipped entity, and one
+whose replacement text is `<q>&x;</q>` yields the skipped entity between the
+start and end of `q`. A reference in an attribute value yields no event.
+
 ## 2. XML and namespace conformance boundary
 
 The implementation follows the normative productions and constraints in:

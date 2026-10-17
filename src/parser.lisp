@@ -144,14 +144,17 @@ the close token kind, and the close position."
 (defun %parser-enter-entity (parser declaration)
   "Continue parsing in the replacement text of the internal entity DECLARATION."
   (let* ((entities (xml-parser-entities parser))
+         (skipped nil)
          (source (with-output-to-string (stream)
                    (%begin-entity-expansion entities declaration)
                    (unwind-protect
-                        (%materialize-entity-source-into
-                         (xml-entity-declaration-replacement-text declaration)
-                         entities stream)
+                        (setf skipped
+                              (%materialize-entity-source-into
+                               (xml-entity-declaration-replacement-text declaration)
+                               entities stream))
                      (%end-entity-expansion entities)))))
     (%parser-push-tokenizer parser source)
+    (setf (xml-parser-entity-skips parser) skipped)
     (push (%make-xml-parser-frame nil nil nil
                                   (xml-parser-frame-context (car (xml-parser-stack parser)))
                                   nil)
@@ -211,6 +214,29 @@ Under the :REJECT policy this signals instead."
      (%parser-token-error parser token (xml-message :unexpected-token-in-content)
                           :content nil))))
 
+(defun %parser-due-skip (parser)
+  "Return the event of a skipped entity in replacement text that the tokenizer has passed, or NIL.
+
+The event comes at the first token boundary at or after the reference. Its
+position is in the replacement text, like the positions of the other events
+read from it."
+  (let ((skip (first (xml-parser-entity-skips parser)))
+        (tokenizer (xml-parser-tokenizer parser)))
+    (when (and skip
+               (<= (car skip)
+                   (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
+      (pop (xml-parser-entity-skips parser))
+      (let* ((input (%xml-tokenizer-input tokenizer))
+             (offset (car skip))
+             (line-start (position #\Newline input :end offset :from-end t)))
+        (%parser-event parser :skipped-external-entity
+                       :name (%make-xml-name (cdr skip) "" nil)
+                       :position (make-xml-position
+                                  :source (xml-parser-source-name parser)
+                                  :offset offset
+                                  :line (1+ (count #\Newline input :end offset))
+                                  :column (- offset (or line-start -1))))))))
+
 (defun %parser-step (parser)
   "Advance PARSER by one event and return it, or NIL after the end-document event."
   (ecase (xml-parser-phase parser)
@@ -221,10 +247,11 @@ Under the :REJECT policy this signals instead."
     (:empty-end (%parser-close-empty-element parser))
     (:running
      (loop
-       (let* ((token (%parser-next-token parser))
-              (event (if (plusp (xml-parser-depth parser))
-                         (%parser-content-token parser token)
-                         (%parser-top-level-token parser token))))
+       (let ((event (or (%parser-due-skip parser)
+                        (let ((token (%parser-next-token parser)))
+                          (if (plusp (xml-parser-depth parser))
+                              (%parser-content-token parser token)
+                              (%parser-top-level-token parser token))))))
          (when event
            (return event)))))
     (:done nil)))
