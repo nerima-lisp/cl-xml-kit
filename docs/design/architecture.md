@@ -6,7 +6,8 @@
 non-validating processing and Namespaces in XML 1.0 Third Edition. Version 1.0
 provides three related views of one input:
 
-1. A pull event reader for forward-only processing.
+1. An event reader for forward-only processing, which the caller pulls one
+   event at a time or maps over the whole input.
 2. A DOM-like tree for applications that need random access or construction of
    a new serialization tree.
 3. A serializer that emits well-formed, namespace-aware XML.
@@ -38,8 +39,8 @@ given tree.
 - XPath, XSLT, XInclude, XML Catalogs, schema languages, and canonical XML.
 - Resolving a URI, opening a file, making a network request, or invoking an
   application-supplied external entity resolver.
-- A SAX callback API. A callback adapter may be added after the pull contract
-  has stabilized.
+- A SAX handler API with per-event-type callbacks. `map-xml-events` passes
+  every event to one function instead.
 - Automatic decoding of BOM-less UTF-16 or other encodings.
 - Preserving lexical details that do not affect the XML information set, such
   as quote choice, entity spelling, attribute order as semantic data, or the
@@ -53,6 +54,31 @@ early termination, and interleaving of multiple readers. It also makes the
 namespace scope and external-resource policy visible on the event that needs
 it. A SAX adapter would require a second lifecycle and callback contract and is
 not needed for the 1.0 scope.
+
+### Event path
+
+The parser object holds the rest of the parse: the parse phase, a stack of
+open frames, and a stack of tokenizers, one for the document and one for each
+entity replacement being read. An internal step function reads tokens until it
+can return the next event. An element or an entity replacement is a frame on
+the frame stack, not a nested call, so neither deep nesting nor entity markup
+grows the host stack; the `max-depth` resource limit is checked before an
+element frame is pushed.
+
+Every consumer takes events from that step function:
+
+- `next-xml-event` returns one event and leaves the parser ready for the next.
+  For a document with a late syntax error, it returns the events before the
+  error, and the following call signals it.
+- `parse-xml` builds the DOM from the events.
+- `map-xml-events` calls a function once per event, and `do-xml-events` runs a
+  body once per event.
+- The source-preserving operations (`select-xml`, the `edit-xml-*` functions,
+  and `format-xml`) build the DOM and a lexical span tree from one parse: the
+  span builder observes each token the parser reads from the document itself,
+  but not tokens of entity replacement text.
+
+No consumer receives an event list, and the parser keeps no event queue.
 
 The pull reader emits these event types:
 
@@ -239,6 +265,8 @@ parse-xml
 make-xml-parser
 next-xml-event
 xml-parser-eof-p
+map-xml-events
+do-xml-events
 xml-event
 make-xml-event
 xml-event-p
@@ -265,8 +293,24 @@ specific condition on invalid input. `resource-limits` defaults to
 
 `make-xml-parser` has the same input and keyword contract and returns one
 forward-only parser. `next-xml-event` takes one parser and returns one event,
-or `nil` at end of input. It signals `xml-parser-state-error` if called after a
-fatal condition. `xml-parser-eof-p` returns true after the end-document event.
+or `nil` at end of input. It tokenizes and parses only as far as that event;
+`make-xml-parser` has already decoded and line-end normalized the whole input.
+It signals `xml-parser-state-error` if called after a fatal condition.
+`xml-parser-eof-p` returns true after the `:end-document` event. That event's
+position is the end of the input, and so is `xml-document-end-position` of a
+parsed document.
+
+```lisp
+(map-xml-events function input &rest parser-options)
+(do-xml-events (event input &optional result) &body body)
+```
+
+`map-xml-events` creates a parser from `input` and the `make-xml-parser`
+keyword arguments, calls `function` on each event in document order, and
+returns `nil`. `do-xml-events` iterates the same events like `dolist`: the
+body runs in a block named `nil`, and `result` is evaluated with `event` bound
+to `nil`. It passes no parser options; use `map-xml-events` to set limits or
+the external-entity policy.
 `xml-event` is a value structure with the constructor signature:
 
 ```lisp
