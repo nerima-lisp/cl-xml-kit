@@ -80,20 +80,18 @@ for each attribute. A namespaced attribute without a prefix gets a generated one
            (%write-attribute state (xml-name-local-name (xml-attribute-name attribute))
                              attribute-prefix attribute path)))
 
-(defun %write-children (state element children scope level path)
-  "Write CHILDREN of ELEMENT, one per indented line when pretty printing element-only content."
+(defun %write-children (state children scope level path)
+  "Write CHILDREN, one per indented line when pretty printing element-only content."
   (when children
     (let ((child-path (append path (list :child)))
           (lines (and (xml-serializer-state-pretty-print state)
                       (%element-only-children-p children))))
       (dolist (child children)
         (when lines
-          (%serializer-write state "\n" element path)
-          (%pretty-indent state (1+ level)))
+          (%pretty-break state (1+ level)))
         (%write-node state child scope (1+ level) child-path))
       (when lines
-        (%serializer-write state "\n" element path)
-        (%pretty-indent state level)))))
+        (%pretty-break state level)))))
 
 (defun %write-element-content (state element children local-name prefix scope level path)
   "Close the start tag of ELEMENT, then write CHILDREN and the end tag unless it is empty."
@@ -102,7 +100,7 @@ for each attribute. A namespaced attribute without a prefix gets a generated one
      (%serializer-write state "/>" element path))
     (t
      (%serializer-write state ">" element path)
-     (%write-children state element children scope level path)
+     (%write-children state children scope level path)
      (%serializer-write state "</" element path)
      (%write-name state local-name prefix element path)
      (%serializer-write state ">" element path))))

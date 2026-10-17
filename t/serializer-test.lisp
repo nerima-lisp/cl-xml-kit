@@ -111,9 +111,29 @@
                  "root" :children (list (make-xml-text :data "x")
                                          (serializer-element "child")))))
     (expect (xml->string element-only :pretty-print t :indent 2)
-            :to-equal "<root>\n  <child/>\n</root>")
+            :to-equal (format nil "<root>~%  <child/>~%</root>"))
     (expect (xml->string mixed :pretty-print t :indent 2)
             :to-equal "<root>x<child/></root>")))
+
+(it "re-parses pretty-printed element-only content as elements and whitespace"
+  (let* ((tree (serializer-element
+                "root" :children (list (serializer-element
+                                        "a" :children (list (serializer-element "b")))
+                                       (serializer-element "c"))))
+         (root (first (xml-document-children
+                       (parse-xml (xml->string tree :pretty-print t))))))
+    (labels ((layout-only-p (element)
+               (every (lambda (child)
+                        (if (xml-element-p child)
+                            (layout-only-p child)
+                            (every (lambda (character)
+                                     (member character '(#\Space #\Newline)))
+                                   (xml-text-data child))))
+                      (xml-element-children element))))
+      (expect (layout-only-p root) :to-be-truthy)
+      (expect (mapcar (lambda (child) (xml-name-local-name (xml-element-name child)))
+                      (remove-if-not #'xml-element-p (xml-element-children root)))
+              :to-equal '("a" "c")))))
 
 (it "omits comments and normalizes no-data PI in canonical output"
   (let ((document (make-xml-document

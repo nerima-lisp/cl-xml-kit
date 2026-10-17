@@ -147,7 +147,9 @@
                   (%binding prefix bindings))
         (return prefix))))))
 
-(defun %pretty-indent (state level)
+(defun %pretty-break (state level)
+  "End the line and indent the next one to LEVEL."
+  (%serializer-emit state #.(string #\Newline))
   (%serializer-emit state (make-string (* level (xml-serializer-state-indent state))
                                        :initial-element #\Space)))
 
