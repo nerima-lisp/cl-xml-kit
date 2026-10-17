@@ -9,31 +9,22 @@ position; configured name and text-node bounds signal
 XML-RESOURCE-LIMIT-EXCEEDED. Every successful branch consumes input or
 returns EOF, so malformed input cannot leave a zero-progress loop."
   (check-argument tokenizer xml-tokenizer-p xml-input-error :tokenizer-required)
-  (let* ((input (%xml-tokenizer-input tokenizer))
-         (state (%xml-tokenizer-state tokenizer)))
-    (when (%xml-tokenizer-state-eof-returned state)
-      (return-from next-xml-token nil))
-    (loop
-      (when (= (%xml-tokenizer-state-index state) (length input))
-        (unless (eq (%xml-tokenizer-state-mode state) :content)
-          (%xml-tokenizer-fail tokenizer (xml-message :unexpected-end-of-input)
-                               :constraint :well-formedness))
-        (setf (%xml-tokenizer-state-eof-returned state) t)
-        (return (%xml-tokenizer-token tokenizer :eof nil
-                                      (%xml-tokenizer-current-position tokenizer))))
-      (return
-        (case (%xml-tokenizer-state-mode state)
-          (:content (%xml-tokenizer-next-content tokenizer))
-          (:start-tag (%xml-tokenizer-next-start-tag tokenizer))
-          (:start-after-element-name
-           (%xml-tokenizer-next-start-after-element-name tokenizer))
-          (:start-after-attribute-name
-           (%xml-tokenizer-next-start-after-attribute-name tokenizer))
-          (:start-after-equals (%xml-tokenizer-next-start-after-equals tokenizer))
-          (:start-after-quote (%xml-tokenizer-next-start-after-quote tokenizer))
-          (:end-tag (%xml-tokenizer-next-end-tag tokenizer))
-          (:end-after-name (%xml-tokenizer-next-end-after-name tokenizer))
-          (otherwise
-           (%xml-tokenizer-fail tokenizer (xml-message :unknown-tokenizer-state)
-                                :constraint :tokenizer-state)))))))
-
+  (let ((state (%xml-tokenizer-state tokenizer)))
+    (cond
+      ((%xml-tokenizer-state-eof-returned state) nil)
+      ((= (%xml-tokenizer-state-index state) (length (%xml-tokenizer-input tokenizer)))
+       (unless (eq (%xml-tokenizer-state-mode state) :content)
+         (%xml-tokenizer-fail tokenizer (xml-message :unexpected-end-of-input)
+                              :constraint :well-formedness))
+       (setf (%xml-tokenizer-state-eof-returned state) t)
+       (%xml-tokenizer-token tokenizer :eof nil (%xml-tokenizer-current-position tokenizer)))
+      (t
+       (ecase (%xml-tokenizer-state-mode state)
+         (:content (%xml-tokenizer-next-content tokenizer))
+         (:start-tag (%xml-tokenizer-name-token tokenizer :start-after-element-name))
+         (:start-after-element-name (%xml-tokenizer-next-attribute-or-close tokenizer nil))
+         (:start-after-attribute-name (%xml-tokenizer-next-equals tokenizer))
+         (:start-after-equals (%xml-tokenizer-next-quoted-value tokenizer))
+         (:start-after-quote (%xml-tokenizer-next-attribute-or-close tokenizer t))
+         (:end-tag (%xml-tokenizer-name-token tokenizer :end-after-name))
+         (:end-after-name (%xml-tokenizer-next-end-tag-close tokenizer)))))))

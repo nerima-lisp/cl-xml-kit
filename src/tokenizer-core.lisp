@@ -120,6 +120,13 @@ cursor, so repeated calls consume the input in order."
          :value value
          :limit limit))
 
+(declaim (inline %xml-tokenizer-peek))
+(defun %xml-tokenizer-peek (tokenizer)
+  "Return the character at TOKENIZER's cursor, or NIL at the end of input."
+  (let ((input (%xml-tokenizer-input tokenizer))
+        (index (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
+    (and (< index (length input)) (char input index))))
+
 (defun %xml-tokenizer-starts-with-p (tokenizer string)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
@@ -149,11 +156,9 @@ cursor, so repeated calls consume the input in order."
   (loop repeat (length literal) do (%xml-tokenizer-advance tokenizer)))
 
 (defun %xml-tokenizer-skip-space (tokenizer)
-  (let* ((input (%xml-tokenizer-input tokenizer))
-         (state (%xml-tokenizer-state tokenizer)))
-    (loop while (and (< (%xml-tokenizer-state-index state) (length input))
-                     (xml-space-char-p (char input (%xml-tokenizer-state-index state))))
-          do (%xml-tokenizer-advance tokenizer))))
+  (loop for character = (%xml-tokenizer-peek tokenizer)
+        while (and character (xml-space-char-p character))
+        do (%xml-tokenizer-advance tokenizer)))
 
 (defun %xml-tokenizer-token (tokenizer kind value position)
   (make-xml-token :kind kind :value value :position position
