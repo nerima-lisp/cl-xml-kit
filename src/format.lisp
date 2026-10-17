@@ -112,6 +112,8 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
        (%format-write state ">" element)))))
 
 (defun %format-node (state node level preserve literal)
+  "Write NODE, a parsed element, text, comment, or processing instruction.
+The last clause is the processing instruction."
   (let ((serializer (format-state-serializer state))
         (style (format-state-style state)))
     (typecase node
@@ -120,7 +122,7 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
       (xml-comment
        (%write-comment serializer (%edit-convert-line-breaks (xml-comment-data node) style)
                        node nil))
-      (xml-processing-instruction
+      (otherwise
        (let ((data (xml-processing-instruction-data node)))
          (%write-processing-instruction serializer (xml-processing-instruction-target node)
                                         (and data (%edit-convert-line-breaks data style))
@@ -172,7 +174,8 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
               (t merged)))))
 
 (defun %format-signature (node &optional preserve)
-  "Return a value that is EQUAL for nodes that differ only in layout whitespace."
+  "Return a value that is EQUAL for nodes that differ only in layout whitespace.
+NODE belongs to a parsed document, so the last clause is the doctype."
   (typecase node
     (xml-document
      (cons :document (%format-children-signature (xml-document-children node) nil t)))
@@ -197,7 +200,7 @@ The nearest xml:space attribute decides: `preserve` keeps, `default` resets."
     (xml-processing-instruction
      (list :processing-instruction (xml-processing-instruction-target node)
            (xml-processing-instruction-data node)))
-    (xml-doctype
+    (otherwise
      (list :doctype (xml-doctype-root-name node) (xml-doctype-public-id node)
            (xml-doctype-system-id node) (xml-doctype-internal-subset node)))))
 

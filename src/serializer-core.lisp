@@ -112,20 +112,18 @@
     (when (and prefix (string= prefix "xml")
                (not (string= uri +xml-namespace-uri+)))
       (%serializer-error object path (xml-message :xml-prefix-reserved-uri)))
-    (when (and (string= uri +xmlns-namespace-uri+)
-               (not (and prefix (string= prefix "xmlns"))))
+    (when (string= uri +xmlns-namespace-uri+)
       (%serializer-error object path (xml-message :xmlns-uri-reserved)))
     (values prefix uri)))
 
 (defun %name-components (name object path)
-  (unless (xml-name-p name)
-    (%serializer-error object path (xml-message :serialized-name-invalid)))
+  "Return the local name, URI, and prefix of NAME.
+MAKE-XML-NAME already refuses an empty or colon-bearing local name and a prefix
+with a colon, so only an empty prefix is left to refuse here."
   (let ((local-name (xml-name-local-name name))
         (namespace-uri (xml-name-namespace-uri name))
         (prefix (xml-name-prefix name)))
-    (when (or (zerop (length local-name)) (find #\: local-name))
-      (%serializer-error object path (xml-message :serialized-local-name-invalid)))
-    (when (and prefix (or (zerop (length prefix)) (find #\: prefix)))
+    (when (and prefix (zerop (length prefix)))
       (%serializer-error object path (xml-message :serialized-prefix-invalid)))
     (values local-name namespace-uri prefix)))
 

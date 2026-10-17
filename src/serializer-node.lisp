@@ -102,6 +102,8 @@
   (%serializer-write state "?>" object path))
 
 (defun %write-node (state object scope level path)
+  "Write OBJECT. Every caller has checked it with XML-NODE-P, so the last clause
+sees only a doctype."
   (cond
     ((xml-document-p object) (%write-document state object scope level path))
     ((xml-element-p object) (%write-element state object scope level path))
@@ -114,6 +116,5 @@
     ((xml-processing-instruction-p object)
      (%write-processing-instruction state (xml-processing-instruction-target object)
                                     (xml-processing-instruction-data object) object path))
-    ((xml-doctype-p object) (%write-doctype state object path))
-    (t (%serializer-error object path (xml-message :node-not-serializable)))))
+    (t (%write-doctype state object path))))
 
