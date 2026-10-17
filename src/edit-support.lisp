@@ -8,16 +8,14 @@
                   :format-arguments ("VALUE"))
   (let ((index (position-if-not #'xml-char-p value)))
     (when index
-      (error 'xml-edit-value-error
-             :path path :reason :invalid-character
-             :message (xml-message :value-illegal-character
-                                   (char-code (char value index)) index)))))
+      (xml-error 'xml-edit-value-error :value-illegal-character
+                 :format-arguments ((char-code (char value index)) index)
+                 :condition-initargs (:path path :reason :invalid-character)))))
 
 (defun %edit-refuse-namespace-declaration (path parsed)
   (when (%span-namespace-declaration-p (parsed-path-attribute-name parsed))
-    (error 'xml-unsupported-edit
-           :path path :reason :namespace-declaration
-           :message (xml-message :namespace-declaration-not-editable))))
+    (xml-error 'xml-unsupported-edit :namespace-declaration-not-editable
+               :condition-initargs (:path path :reason :namespace-declaration))))
 
 (defun %edit-single-hit (context parsed)
   "Return the one element that the element steps of PARSED select."

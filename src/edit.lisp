@@ -43,9 +43,8 @@ the document element cannot be removed. A `text()` path is not a deletable
 target and signals XML-PATH-ERROR with reason :WRONG-TARGET."
   (let ((parsed (%path-parse path)))
     (when (eq (parsed-path-target parsed) :text)
-      (error 'xml-path-error
-             :path path :reason :wrong-target
-             :message (xml-message :text-path-not-deletable)))
+      (xml-error 'xml-path-error :text-path-not-deletable
+                 :condition-initargs (:path path :reason :wrong-target)))
     (when (eq (parsed-path-target parsed) :attribute)
       (%edit-refuse-namespace-declaration path parsed))
     (let ((context (%path-context source path
@@ -72,9 +71,8 @@ fragment. The result is parsed again and must equal the original document
 with the element added."
   (let ((parsed (%path-parse path)))
     (unless (eq (parsed-path-target parsed) :element)
-      (error 'xml-path-error
-             :path path :reason :wrong-target
-             :message (xml-message :append-needs-element)))
+      (xml-error 'xml-path-error :append-needs-element
+                 :condition-initargs (:path path :reason :wrong-target)))
     (%edit-check-value path fragment)
     (%edit-append-element (%path-context source path
                                          :resource-limits resource-limits

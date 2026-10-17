@@ -168,10 +168,10 @@ reason :VERIFICATION-FAILED."
                  :resource-limits (path-context-resource-limits context)
                  :external-entity-policy (path-context-external-entity-policy context))
     (xml-resource-limit-exceeded (condition)
-      (error 'xml-edit-value-error
-             :path (path-context-path context) :reason :resource-limit
-             :cause condition
-             :message (xml-message :edit-exceeds-limit condition)))
+      (xml-error 'xml-edit-value-error :edit-exceeds-limit
+                 :format-arguments (condition)
+                 :condition-initargs (:path (path-context-path context)
+                                      :reason :resource-limit :cause condition)))
     (error (condition)
       (%path-refuse context :verification-failed
                     (xml-message :edit-does-not-parse condition)))))
