@@ -21,13 +21,15 @@ that BODY holds a root Name after its leading space."
             (values start index nil nil))))))
 
 (defun %parser-check-external-dtd (parser token body root-name index)
-  (when (and (eq (xml-parser-external-entity-policy parser) :reject)
-             (or (search "SYSTEM" body :start2 index :test #'char-equal)
-                 (search "PUBLIC" body :start2 index :test #'char-equal)))
-    (xml-error 'xml-external-resource-disabled :external-dtd-disabled
-               :condition-initargs (:identifier root-name :kind :external-dtd
-                                    :source (xml-parser-source-name parser)
-                                    :position (xml-token-position token)))))
+  (let* ((subset-open (position #\[ body :start index))
+         (external-id (subseq body index (or subset-open (length body)))))
+    (when (and (eq (xml-parser-external-entity-policy parser) :reject)
+               (or (search "SYSTEM" external-id :test #'char-equal)
+                   (search "PUBLIC" external-id :test #'char-equal)))
+      (xml-error 'xml-external-resource-disabled :external-dtd-disabled
+                 :condition-initargs (:identifier root-name :kind :external-dtd
+                                      :source (xml-parser-source-name parser)
+                                      :position (xml-token-position token))))))
 
 (defun %parser-doctype (parser token)
   (let ((body (xml-token-value token)))

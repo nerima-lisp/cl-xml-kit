@@ -89,7 +89,14 @@
 
   (it "keeps the data of a comment unchanged"
     (expect (xml-comment-data (first (xml-element-children (document-element "<r><!-- c --></r>"))))
-            :to-equal " c ")))
+            :to-equal " c "))
+  (it "rejects external entity references when parse-xml policy is omitted"
+    (expect (lambda ()
+              (parse-xml "<!DOCTYPE root [<!ENTITY remote SYSTEM \"urn:example:remote\">]><root>&remote;</root>"))
+            :to-signal-xml
+            (quote (xml-external-resource-disabled
+                    (xml-external-resource-disabled-kind :general-entity)
+                    (xml-external-resource-disabled-identifier "urn:example:remote"))))))
 
 (describe "positions"
   (it "records the end of the input as the document end position"
