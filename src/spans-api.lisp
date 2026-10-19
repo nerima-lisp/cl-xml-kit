@@ -67,17 +67,25 @@ built from it."
      :attlist-element-names (and context
                                  (xml-entity-context-attlist-element-names context)))))
 
-(defun scan-xml-spans (source &key
+(defun scan-xml-spans (source success failure &key
                                 (resource-limits *default-xml-resource-limits*)
                                 (external-entity-policy :reject))
-  "Return the SPAN-DOCUMENT of the XML string SOURCE.
+  "Call SUCCESS with SOURCE's span document, or FAILURE with the condition raised while scanning SOURCE.
 
 Spans index SOURCE itself. A leading U+FEFF is skipped and every CRLF or CR is
-read as the single line feed the parser sees. The spans come from the tokens of
-one parse, run with these options, which also checks well-formedness."
-  (check-argument source stringp xml-input-error :label-must-be-string
-                  :format-arguments ("XML span SOURCE"))
-  (multiple-value-bind (parser scanner)
-      (%source-parser source resource-limits external-entity-policy)
-    (%parser-resume parser #'%continue-event)
-    (%span-document scanner parser source)))
+read as the single line feed the parser sees. The scan parses SOURCE once with
+these options, checking well-formedness."
+  (multiple-value-bind (document condition)
+      (handler-case
+          (progn
+            (check-argument source stringp xml-input-error :label-must-be-string
+                            :format-arguments ("XML span SOURCE"))
+            (multiple-value-bind (parser scanner)
+                (%source-parser source resource-limits external-entity-policy)
+              (%parser-resume parser #'%continue-event)
+              (values (%span-document scanner parser source) nil)))
+        (error (condition)
+          (values nil condition)))
+    (if condition
+        (funcall failure condition)
+        (funcall success document))))

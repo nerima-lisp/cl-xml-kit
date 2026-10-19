@@ -45,7 +45,6 @@ an undeclared default namespace is left out."
                (nreverse bindings))))
 
 (defun %edit-fragment-wrapper (bindings fragment)
-  "Return a document that wraps FRAGMENT in an element declaring BINDINGS."
   (with-output-to-string (stream)
     (write-string "<w" stream)
     (loop for (prefix . uri) in bindings
@@ -68,32 +67,28 @@ an undeclared default namespace is left out."
                 (1+ (position-if-not #'xml-space-char-p string :from-end t)))
         "")))
 
-(defun %edit-fragment-element (context chain fragment)
-  "Parse FRAGMENT as it would stand inside the innermost element of CHAIN.
-
-Return the one element it consists of, and FRAGMENT without the XML whitespace
-around it. A fragment that does not parse in a wrapper that declares the
-namespaces in scope signals XML-EDIT-VALUE-ERROR :MALFORMED-FRAGMENT, or
-:RESOURCE-LIMIT for a limit of the caller, with the parse condition as its
-cause; one that parses to anything but a single element signals
-:NOT-SINGLE-ELEMENT."
-  (let* ((path (path-context-path context))
-         (trimmed (%trim-xml-space fragment))
-         (wrapper (handler-case
-                      (parse-xml (%edit-fragment-wrapper (%edit-scope-bindings chain) trimmed)
-                                 :resource-limits (path-context-resource-limits context)
-                                 :external-entity-policy
-                                 (path-context-external-entity-policy context))
-                    (error (condition)
-                      (xml-error 'xml-edit-value-error :fragment-unacceptable
-                                 :format-arguments (condition)
-                                 :condition-initargs
-                                 (:path path :cause condition
-                                  :reason (if (typep condition 'xml-resource-limit-exceeded)
-                                              :resource-limit
-                                              :malformed-fragment))))))
-         (children (xml-element-children (first (xml-document-children wrapper)))))
-    (unless (and children (null (rest children)) (xml-element-p (first children)))
-      (xml-error 'xml-edit-value-error :fragment-not-single-element
-                 :condition-initargs (:path path :reason :not-single-element)))
-    (values (first children) trimmed)))
+(defun %edit-fragment-element (context chain fragment success failure)
+  "Call SUCCESS with the parsed element and trimmed fragment, or FAILURE with the condition."
+  (%call-with-callbacks
+   (lambda ()
+     (let* ((path (path-context-path context))
+            (trimmed (%trim-xml-space fragment))
+            (wrapper
+              (handler-case
+                  (parse-xml (%edit-fragment-wrapper (%edit-scope-bindings chain) trimmed)
+                             :resource-limits (path-context-resource-limits context)
+                             :external-entity-policy
+                             (path-context-external-entity-policy context))
+                (error (condition) (xml-error 'xml-edit-value-error :fragment-unacceptable
+                             :format-arguments (condition)
+                             :condition-initargs
+                             (:path path :cause condition
+                              :reason (if (typep condition 'xml-resource-limit-exceeded)
+                                          :resource-limit
+                                          :malformed-fragment))))))
+            (children (xml-element-children (first (xml-document-children wrapper)))))
+       (unless (and children (null (rest children)) (xml-element-p (first children)))
+         (xml-error 'xml-edit-value-error :fragment-not-single-element
+                    :condition-initargs (:path path :reason :not-single-element)))
+       (values (first children) trimmed)))
+   success failure))

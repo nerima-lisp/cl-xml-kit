@@ -1,14 +1,13 @@
 ;;;; src/verify.lisp
 ;;;;
 ;;;; Splicing and verification shared by the source-preserving edits. An edit
-;;;; replaces one range of the source. The result is returned only when it
-;;;; parses, with the caller's options, to the document that the requested
-;;;; change implies; otherwise the edit is refused.
+;;;; replaces one range of the source. A candidate reaches the success callback
+;;;; only when it parses, with the caller's options, to the document implied by
+;;;; the requested change; otherwise the edit is refused.
 
 (in-package #:cl-xml-kit)
 
 (defun %edit-splice (source start end replacement)
-  "Return SOURCE with the characters from START to END replaced by REPLACEMENT."
   (concatenate 'string (subseq source 0 start) replacement (subseq source end)))
 
 (defun %dom-element-with (element &key (attributes (xml-element-attributes element))
@@ -160,41 +159,53 @@ document element itself), and nowhere else."
                                           lenient-ordinals))
                 expected actual))))
 
-(defun %edit-reparse (context candidate)
-  "Return the document that CANDIDATE parses to, with the options of CONTEXT.
+(defun %edit-reparse (context candidate success failure)
+  "Call SUCCESS with the parsed candidate, or FAILURE with its verification condition.
 
-A resource limit that it exceeds signals XML-EDIT-VALUE-ERROR with reason
-:RESOURCE-LIMIT and the condition as its cause, since the original document was
-within the limits. Any other parse condition signals XML-UNSUPPORTED-EDIT with
-reason :VERIFICATION-FAILED."
-  (handler-case
-      (parse-xml (%strip-bom candidate)
-                 :resource-limits (path-context-resource-limits context)
-                 :external-entity-policy (path-context-external-entity-policy context))
-    (xml-resource-limit-exceeded (condition)
-      (xml-error 'xml-edit-value-error :edit-exceeds-limit
-                 :format-arguments (condition)
-                 :condition-initargs (:path (path-context-path context)
-                                      :reason :resource-limit :cause condition)))
-    (error (condition)
-      (%path-refuse context :verification-failed
-                    (xml-message :edit-does-not-parse condition)))))
+A resource limit is reported as XML-EDIT-VALUE-ERROR with reason
+:RESOURCE-LIMIT and the original condition as its cause. Any other parse error
+is reported as XML-UNSUPPORTED-EDIT with reason :VERIFICATION-FAILED."
+  (%call-with-callbacks
+   (lambda ()
+     (handler-case
+         (parse-xml (%strip-bom candidate)
+                    :resource-limits (path-context-resource-limits context)
+                    :external-entity-policy
+                    (path-context-external-entity-policy context))
+       (xml-resource-limit-exceeded (condition)
+         (xml-error 'xml-edit-value-error :edit-exceeds-limit
+                    :format-arguments (condition)
+                    :condition-initargs
+                    (:path (path-context-path context)
+                     :reason :resource-limit :cause condition)))
+       (error (condition) (%path-refuse context :verification-failed
+                       (xml-message :edit-does-not-parse condition)))))
+   success failure))
 
-(defun %edit-verify (context candidate expected &key (lenient-ordinals :none))
-  "Return CANDIDATE when it parses to EXPECTED, else refuse the edit.
+(defun %edit-verify (context candidate expected success failure
+                            &key (lenient-ordinals :none))
+  "Call SUCCESS with CANDIDATE when its parsed document is equivalent to EXPECTED.
 
-A candidate that does not parse is refused as %EDIT-REPARSE describes, and a
-difference from the EXPECTED document signals XML-UNSUPPORTED-EDIT with reason
-:VERIFICATION-FAILED, so no unchecked string is returned."
-  (unless (%dom-document-equivalent-p expected (%edit-reparse context candidate)
-                                      lenient-ordinals)
-    (%path-refuse context :verification-failed
-                  (xml-message :edit-differs)))
-  candidate)
+A parse or structural mismatch is delivered to FAILURE with its XML condition."
+  (%edit-reparse
+   context candidate
+   (lambda (actual)
+     (%call-with-callbacks
+      (lambda ()
+        (unless (%dom-document-equivalent-p expected actual lenient-ordinals)
+          (%path-refuse context :verification-failed
+                        (xml-message :edit-differs)))
+        candidate)
+      success failure))
+   failure))
 
-(defun %edit-finish (context start end replacement expected &key (lenient-ordinals :none))
-  "Replace the range from START to END of the source by REPLACEMENT and verify the result."
-  (%edit-verify context
-                (%edit-splice (path-context-source context) start end replacement)
-                expected
-                :lenient-ordinals lenient-ordinals))
+(defun %edit-finish (context start end replacement expected success failure
+                            &key (lenient-ordinals :none))
+  "Splice and verify a candidate, passing the checked source to SUCCESS."
+  (%call-with-callbacks
+   (lambda ()
+     (%edit-splice (path-context-source context) start end replacement))
+   (lambda (candidate)
+     (%edit-verify context candidate expected success failure
+                   :lenient-ordinals lenient-ordinals))
+   failure))

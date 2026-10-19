@@ -206,11 +206,17 @@ NODE belongs to a parsed document, so the last clause is the doctype."
 
 (defun %format-verify (context output)
   "Return OUTPUT when it parses to the document of CONTEXT apart from layout whitespace, else refuse."
-  (unless (equal (%format-signature (path-context-dom context))
-                 (%format-signature (%edit-reparse context output)))
-    (%path-refuse context :verification-failed
-                  (xml-message :format-differs)))
-  output)
+  (block format-verify
+    (%edit-reparse
+     context output
+     (lambda (document)
+       (unless (equal (%format-signature (path-context-dom context))
+                      (%format-signature document))
+         (%path-refuse context :verification-failed
+                       (xml-message :format-differs)))
+       (return-from format-verify output))
+     (lambda (condition)
+       (error condition)))))
 
 (defun format-xml (source &key (indent 2)
                                (resource-limits *default-xml-resource-limits*)
@@ -230,7 +236,13 @@ SOURCE apart from that whitespace, otherwise XML-UNSUPPORTED-EDIT with reason
                   :format-arguments ("SOURCE"))
   (unless (and (integerp indent) (not (minusp indent)))
     (xml-error 'xml-input-error :indent-must-be-non-negative))
-  (let ((context (%path-context source nil
-                                :resource-limits resource-limits
-                                :external-entity-policy external-entity-policy)))
-    (%format-verify context (%format-document context indent))))
+  (block format-xml
+    (%path-context
+     source nil
+     (lambda (context)
+       (return-from format-xml
+         (%format-verify context (%format-document context indent))))
+     (lambda (condition)
+       (error condition))
+     :resource-limits resource-limits
+     :external-entity-policy external-entity-policy)))
