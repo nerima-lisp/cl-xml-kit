@@ -114,3 +114,19 @@
     (let ((text (first (xml-element-children (document-element "<r>a&amp;b</r>")))))
       (expect (position-offsets (xml-text-position text) (xml-text-end-position text))
               :to-equal '(3 9)))))
+(describe "generated constructor defaults"
+  (it "starts the DOM builder with empty state"
+    (let ((builder (funcall #'cl-xml-kit::%make-dom-builder)))
+      (expect (list (cl-xml-kit::dom-builder-frames builder)
+                    (cl-xml-kit::dom-builder-children builder)
+                    (cl-xml-kit::dom-builder-text builder)
+                    (cl-xml-kit::dom-builder-text-start builder)
+                    (cl-xml-kit::dom-builder-text-end builder)
+                    (cl-xml-kit::dom-builder-end-position builder))
+              :to-equal '(nil nil nil nil nil nil))))
+  (it "starts a frame without children"
+    (let ((frame (funcall #'cl-xml-kit::%make-dom-frame :start nil)))
+      (expect (list (cl-xml-kit::dom-frame-event frame)
+                    (cl-xml-kit::dom-frame-namespace-declarations frame)
+                    (cl-xml-kit::dom-frame-children frame))
+              :to-equal '(:start nil nil)))))

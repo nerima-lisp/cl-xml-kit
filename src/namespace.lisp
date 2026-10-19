@@ -72,7 +72,7 @@
             (:conc-name %xml-namespace-context-)
             (:copier nil))
   "An immutable snapshot of in-scope namespace bindings."
-  (bindings nil :read-only t))
+  bindings)
 
 (defun %namespace-copy-bindings (bindings)
   (mapcar (lambda (binding)

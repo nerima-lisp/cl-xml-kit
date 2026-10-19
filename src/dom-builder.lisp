@@ -4,9 +4,9 @@
             (:constructor %make-dom-frame (event namespace-declarations))
             (:copier nil))
   "An element whose start event the DOM builder has taken and whose end it awaits."
-  (event nil :read-only t)
-  (namespace-declarations nil :read-only t)
-  (children nil))
+  event
+  namespace-declarations
+  children)
 
 (defstruct (dom-builder
             (:constructor %make-dom-builder ())
@@ -15,12 +15,12 @@
 
 CHILDREN holds the document's children, newest first. TEXT holds the pieces of
 the pending character run, newest first, from TEXT-START to TEXT-END."
-  (frames nil)
-  (children nil)
-  (text nil)
-  (text-start nil)
-  (text-end nil)
-  (end-position nil))
+  frames
+  children
+  text
+  text-start
+  text-end
+  end-position)
 
 (defun %dom-add-child (builder node)
   (let ((frame (car (dom-builder-frames builder))))

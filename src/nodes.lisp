@@ -7,7 +7,7 @@
     (xml-error 'xml-input-error :label-must-be-string-or-nil :format-arguments (label)))
   value)
 
-(defun %string-value (value label &key (nonempty nil) (no-colon nil))
+(defun %string-value (value label &key nonempty no-colon)
   (check-argument value stringp xml-input-error :label-must-be-string
                   :format-arguments (label))
   (when (and nonempty (zerop (length value)))
@@ -42,7 +42,8 @@
       (xml-error 'xml-input-error :position-value-required)))
   value)
 
-(defun make-xml-position (&key source (offset 0) (line 1) (column 1))
+(defun make-xml-position (&key source (offset 0)
+                               (line 1) (column 1))
   "Return an immutable source position with zero-based OFFSET and one-based LINE and COLUMN."
   (%string-or-nil source "SOURCE")
   (unless (and (integerp offset) (not (minusp offset)))

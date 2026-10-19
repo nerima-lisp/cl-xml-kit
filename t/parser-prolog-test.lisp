@@ -143,4 +143,21 @@
     (expect (lambda () (pull-events input))
             :to-signal-xml `(xml-input-error (xml-condition-message ,message)))
     (expect (lambda () (parse-xml input))
-            :to-signal-xml `(xml-input-error (xml-condition-message ,message)))))
+            :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
+  (it "expands a reference while the root is open"
+    (let* ((parser (make-xml-parser ""))
+           (token (cl-xml-kit::make-xml-token :kind :entity-reference :value "amp")))
+      (setf (cl-xml-kit::xml-parser-root-seen parser) t)
+      (expect (event-summary (cl-xml-kit::%parser-top-level-reference parser token))
+              :to-equal (quote (:characters nil "&")))))
+  (it "routes a skipped external reference while the root is open"
+    (let* ((parser (make-xml-parser "" :external-entity-policy :skip))
+           (entities (cl-xml-kit::xml-parser-entities parser))
+           (token (cl-xml-kit::make-xml-token :kind :entity-reference :value "remote")))
+      (setf (cl-xml-kit::xml-parser-root-seen parser) t)
+      (cl-xml-kit::xml-entity-context-declare
+       entities
+       (cl-xml-kit::make-xml-entity-declaration
+        :name "remote" :external-p t :system-id "urn:remote"))
+      (expect (event-summary (cl-xml-kit::%parser-top-level-reference parser token))
+              :to-equal (quote (:skipped-external-entity "remote" nil))))))

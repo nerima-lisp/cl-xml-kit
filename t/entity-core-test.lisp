@@ -3,6 +3,7 @@
 (describe "entity context construction"
   (it-each ((:resource-limits :bad "RESOURCE-LIMITS must be XML resource limits.")
             (:external-entity-policy :load "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP.")
+            (:external-entity-policy nil "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP.")
             (:source 42 "SOURCE must be a string or NIL.")
             (:position "p" "POSITION must be an XML-POSITION."))
       "refuses ~S ~S with the message ~S"
@@ -10,9 +11,11 @@
     (expect (lambda () (cl-xml-kit::make-xml-entity-context key value))
             :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
 
-  (it "refuses an invalid external-entity policy when parsing a subset"
+  (it-each ((:load) (nil))
+      "refuses external-entity policy ~S when parsing a subset"
+      (policy)
     (expect (lambda ()
-              (cl-xml-kit::parse-xml-internal-subset "" :external-entity-policy :load))
+              (cl-xml-kit::parse-xml-internal-subset "" :external-entity-policy policy))
             :to-signal-xml '(xml-input-error
                              (xml-condition-message
                               "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP."))))
@@ -219,4 +222,7 @@
       (expect (cl-xml-kit::expand-xml-entity-references "A&remote;&remote;B" context)
               :to-equal "AB")
       (expect (cl-xml-kit::xml-entity-context-skipped-external-entities context)
-              :to-equal '("remote")))))
+              :to-equal '("remote"))))
+  (it "treats an empty reference body as a named reference"
+    (expect (cl-xml-kit::%reference-character "" (cl-xml-kit::make-xml-entity-context))
+            :to-be nil)))

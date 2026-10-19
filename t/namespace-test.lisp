@@ -184,7 +184,9 @@
             :to-signal-xml '(xml-resource-limit-exceeded
                              (xml-resource-limit-exceeded-kind :max-namespace-bindings)
                              (xml-resource-limit-exceeded-value 2)
-                             (xml-resource-limit-exceeded-limit 1)))))
+                             (xml-resource-limit-exceeded-limit 1))))
+  (it "rejects non-string NCName candidates"
+    (expect (cl-xml-kit::%namespace-ncname-p nil) :to-be nil)))
 
 ;; :CONTEXT in a row stands for a fresh namespace context.
 (describe "namespace resolver arguments"

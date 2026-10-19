@@ -12,12 +12,12 @@
                 (name replacement-text parameter-p external-p public-id system-id))
             (:copier nil))
   "An internal entity declaration, or an external declaration marker."
-  (name "" :read-only t)
-  (replacement-text nil :read-only t)
-  (parameter-p nil :read-only t)
-  (external-p nil :read-only t)
-  (public-id nil :read-only t)
-  (system-id nil :read-only t))
+  name
+  replacement-text
+  parameter-p
+  external-p
+  public-id
+  system-id)
 
 (defstruct (xml-entity-context
             (:constructor %make-xml-entity-context
@@ -25,17 +25,17 @@
                  source position expansions expanded-characters expansion-stack
                  skipped-external-entities attlist-element-names)))
   "Mutable, parse-local state used while expanding XML entities."
-  (declarations (make-hash-table :test #'equal))
-  (parameter-declarations (make-hash-table :test #'equal))
-  (limits *default-xml-resource-limits*)
-  (external-entity-policy :reject)
-  (source nil)
-  (position nil)
-  (expansions 0)
-  (expanded-characters 0)
-  (expansion-stack nil)
-  (skipped-external-entities nil)
-  (attlist-element-names nil))
+  declarations
+  parameter-declarations
+  limits
+  external-entity-policy
+  source
+  position
+  expansions
+  expanded-characters
+  expansion-stack
+  skipped-external-entities
+  attlist-element-names)
 
 (defun make-xml-entity-context (&key
                                   (resource-limits *default-xml-resource-limits*)

@@ -94,7 +94,13 @@
                     (cl-xml-kit::parse-xml-internal-subset
                      "<!ATTLIST r a CDATA '>'><!ATTLIST  q b CDATA #IMPLIED><!ATTLIST><!ATTLIST r c CDATA #IMPLIED><!ATTLIST 1 c CDATA #IMPLIED>")))
                   #'string<)
-            :to-equal '("q" "r"))))
+            :to-equal '("q" "r")))
+  (it "returns false for a quote check at the end of input"
+    (expect (cl-xml-kit::%quote-at-p "" 0) :to-be nil))
+  (it "ignores an ATTLIST declaration with no element name"
+    (expect (cl-xml-kit::xml-entity-context-attlist-element-names
+             (cl-xml-kit::parse-xml-internal-subset "<!ATTLIST >"))
+            :to-be nil)))
 
 (describe "parameter entity references"
   (it-each (("%p" :entity-reference ";")
