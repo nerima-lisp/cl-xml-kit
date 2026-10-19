@@ -25,6 +25,36 @@
         "type": "github"
       }
     },
+    "cl-host-kit": {
+      "inputs": {
+        "cl-nix-forge": [
+          "cl-nix-forge"
+        ],
+        "cl-weave": [
+          "cl-weave"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "treefmt-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1785662299,
+        "narHash": "sha256-XzvvQ6MsRFYQNYe757mIbzSlBUy8l6Jv0aReFpuxPyo=",
+        "owner": "nerima-lisp",
+        "repo": "cl-host-kit",
+        "rev": "7dc003d5ba176080796d775f6c8c4f75a5d56107",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "ref": "v0.2.5",
+        "repo": "cl-host-kit",
+        "type": "github"
+      }
+    },
     "cl-nix-forge": {
       "inputs": {
         "nixpkgs": [
@@ -309,6 +339,7 @@
     "root": {
       "inputs": {
         "cl-codec-kit": "cl-codec-kit",
+        "cl-host-kit": "cl-host-kit",
         "cl-nix-forge": "cl-nix-forge_3",
         "cl-weave": "cl-weave_2",
         "nixpkgs": "nixpkgs",

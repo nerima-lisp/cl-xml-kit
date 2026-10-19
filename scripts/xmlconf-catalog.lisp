@@ -211,11 +211,7 @@ instruction, or declaration starting at LESS, or NIL when LESS starts a tag."
                   (1+ end)))))))
 
 (defun read-text-file (path)
-  (with-open-file (stream path :direction :input :external-format :utf-8)
-    (with-output-to-string (text)
-      (loop for character = (read-char stream nil nil)
-            while character
-            do (write-char character text)))))
+  (host-kit:read-file-string path :external-format :utf-8))
 
 (defun directory-pathname (path)
   (let ((pathname (pathname path)))
@@ -225,21 +221,19 @@ instruction, or declaration starting at LESS, or NIL when LESS starts a tag."
                    :defaults pathname)))
 
 (defun existing-directory-p (path)
-  (let ((found (probe-file path)))
-    (and found (null (pathname-name (truename found))))))
+  (not (null (host-kit:directory-exists-p path))))
 
 (defun find-catalog-root (directory)
   (let* ((dir (directory-pathname directory))
          (direct (merge-pathnames "xmlconf.xml" dir))
          (nested (merge-pathnames "xmlconf/xmlconf.xml" dir)))
-    (cond
-      ((probe-file direct) (truename direct))
-      ((probe-file nested) (truename nested))
-      (t (error "XMLConf catalog root xmlconf.xml was not found below ~A" dir)))))
+    (or (host-kit:file-exists-p direct)
+        (host-kit:file-exists-p nested)
+        (error "XMLConf catalog root xmlconf.xml was not found below ~A" dir))))
 
 (defun resolve-entity-path (source system-id)
   (let ((path (merge-pathnames system-id (directory-pathname source))))
-    (or (probe-file path)
+    (or (host-kit:file-exists-p path)
         (error "XMLConf external catalog entity ~A from ~A was not found"
                system-id source))))
 

@@ -50,7 +50,7 @@ ARGUMENTS."
   (let ((analysis
           (analyze-xmlconf directory
                            :exclusions-file
-                           (or (uiop:getenv "XML_KIT_XMLCONF_EXCLUSIONS")
+                           (or (host-kit:getenv "XML_KIT_XMLCONF_EXCLUSIONS")
                                *default-exclusions-file*))))
     (print-analysis analysis)
     (when (eq mode :execute)
@@ -61,12 +61,14 @@ ARGUMENTS."
 
 (defun command-line-main (arguments)
   (multiple-value-bind (mode directory report) (parse-options arguments)
-    (let ((directory (or directory (uiop:getenv "XML_KIT_XMLCONF_DIR"))))
+    (let ((directory (or directory (host-kit:getenv "XML_KIT_XMLCONF_DIR"))))
       (unless directory
         (usage-error "XML_KIT_XMLCONF_DIR is not set; pass --catalog-dir DIR"))
       (if report
-          (with-open-file (*standard-output* report :direction :output
-                                                    :if-exists :supersede)
-            (run-command mode directory))
+          (host-kit:write-file-string
+           (with-output-to-string (output)
+             (let ((*standard-output* output))
+               (run-command mode directory)))
+           report)
           (run-command mode directory))
       0)))

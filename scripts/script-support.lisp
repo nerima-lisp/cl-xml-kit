@@ -1,6 +1,6 @@
 ;;;; Definitions shared by the scripts in this directory, run-tests.lisp, and
 ;;;; run-benchmarks.lisp.
-;;;; Loading this file defines functions only.
+;;;; Loading this file registers the repository and loads its host helpers.
 
 (require :asdf)
 
@@ -10,9 +10,7 @@
            #:repository-root
            #:load-project-definition
            #:register-repository
-           #:call-run-tests
            #:positive-integer-setting
-           #:process-output-within
            #:script-usage-error
            #:load-xmlconf-modules
            #:run-script))
@@ -37,25 +35,22 @@
   (uiop:pathname-parent-directory-pathname *scripts-directory*))
 
 (defun load-project-definition ()
+  (register-repository)
   (asdf:load-asd (merge-pathnames "cl-xml-kit.asd" (repository-root))))
 
 (defun register-repository ()
-  "Make ASDF find this repository's systems first and every other system
-through the caller's ASDF configuration."
+  "Make ASDF find this repository and inherit the caller dependency configuration."
   (asdf:initialize-source-registry
-   `(:source-registry (:tree ,(repository-root)) :inherit-configuration)))
-
-(defun call-run-tests ()
-  (let* ((package (find-package "CL-XML-KIT/TEST"))
-         (symbol (and package (find-symbol "RUN-TESTS" package))))
-    (unless (and symbol (fboundp symbol))
-      (error "The loaded cl-xml-kit/test system does not define RUN-TESTS"))
-    (unless (funcall (symbol-function symbol))
-      (error "cl-xml-kit/test returned NIL"))))
+   `(:source-registry (:directory ,(repository-root)) :inherit-configuration)))
+(progn
+  (register-repository)
+  (asdf:load-system "cl-host-kit"))
+(setf *scripts-directory*
+      (host-kit:pathname-directory-pathname *load-truename*))
 
 (defun positive-integer-setting (name default)
   "Return environment variable NAME as a positive decimal integer, or DEFAULT."
-  (let ((text (uiop:getenv name)))
+  (let ((text (host-kit:getenv name)))
     (if (null text)
         default
         (let ((value (and (plusp (length text))
@@ -65,32 +60,6 @@ through the caller's ASDF configuration."
           (unless (and value (plusp value))
             (error "~A must be a positive decimal integer, got ~S" name text))
           value))))
-
-(defun process-output-within (command seconds)
-  "Run COMMAND, a program and its arguments, and return its standard output
-text and exit code. Standard error is inherited. When COMMAND does not exit
-within SECONDS, kill its process group and signal an error."
-  (let* ((process (sb-ext:run-program (first command) (rest command)
-                                      :search t :wait nil
-                                      :input nil :output :stream :error t))
-         (output (sb-ext:process-output process))
-         (finished nil))
-    (unwind-protect
-         (handler-case
-             (sb-ext:with-timeout seconds
-               (multiple-value-prog1
-                   (values (uiop:slurp-input-stream :string output)
-                           (progn (sb-ext:process-wait process)
-                                  (sb-ext:process-exit-code process)))
-                 (setf finished t)))
-           (sb-ext:timeout ()
-             (error "~A did not finish within ~D second~:P" (first command) seconds)))
-      ;; With :INPUT NIL the child leads its own process group, and the group
-      ;; cannot be reused before the unreaped leader is waited for below.
-      (unless finished
-        (sb-ext:process-kill process 9 :process-group)
-        (sb-ext:process-wait process))
-      (sb-ext:process-close process))))
 
 (defun load-xmlconf-modules ()
   (dolist (module *xmlconf-modules*)

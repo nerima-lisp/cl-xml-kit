@@ -3,12 +3,7 @@
 (in-package #:cl-xml-kit/xmlconf)
 
 (defun read-octets-file (path)
-  (with-open-file (stream path :direction :input
-                          :element-type '(unsigned-byte 8))
-    (let ((octets (make-array (file-length stream)
-                              :element-type '(unsigned-byte 8))))
-      (read-sequence octets stream)
-      octets)))
+  (host-kit:read-file-octets path))
 
 (defun bom-decoded-text (octets)
   "Return OCTETS decoded as UTF-16 when a UTF-16 byte order mark selects it,
@@ -59,7 +54,7 @@ and as UTF-8 otherwise."
                               (merge-pathnames (xmlconf-test-base test)
                                                source-directory))
                              source-directory)))
-    (probe-file (merge-pathnames relative-path base-directory))))
+    (host-kit:file-exists-p (merge-pathnames relative-path base-directory))))
 
 
 (defparameter *default-case-timeout-seconds* 10)

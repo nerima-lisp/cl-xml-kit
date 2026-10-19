@@ -14,6 +14,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    cl-host-kit = {
+      url = "github:nerima-lisp/cl-host-kit/v0.2.5";
+      inputs = {
+        cl-nix-forge.follows = "cl-nix-forge";
+        cl-weave.follows = "cl-weave";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "treefmt-nix";
+      };
+    };
+
     cl-codec-kit = {
       url = "github:nerima-lisp/cl-codec-kit/v0.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,9 +41,22 @@
       nixpkgs,
       cl-nix-forge,
       cl-weave,
+      cl-host-kit,
       cl-codec-kit,
       treefmt-nix,
     }:
+    let
+      # The release exports Linux packages only, so build its ASDF system for
+      # each platform supported by this flake.
+      clHostKitFor =
+        system:
+        cl-nix-forge.lib.${system}.lispDerivation {
+          pname = "cl-host-kit";
+          version = "0.2.5";
+          lispSystem = "cl-host-kit";
+          src = cl-host-kit.outPath;
+        };
+    in
     cl-nix-forge.lib.x86_64-linux.mkPackageFlake {
       inherit self nixpkgs;
 
@@ -54,10 +77,14 @@
       };
 
       lispDependencies = ctx: [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
-      lispCheckDependencies = ctx: [ cl-weave.packages.${ctx.system}.cl-weave ];
+      lispCheckDependencies = ctx: [
+        cl-weave.packages.${ctx.system}.cl-weave
+        (clHostKitFor ctx.system)
+      ];
 
       sourceInclude = [
         ./scripts/xmlconf-exclusions.sexp
+        ./scripts/coverage-exclusions.sexp
         ./t/__snapshots__/snapshots.sexp
       ];
 
@@ -113,45 +140,39 @@
                 '';
               });
 
+          coverageCheck = ctx.cl.mkCommandCheck {
+            drv = ctx.package;
+            name = "cl-xml-kit-coverage";
+            command = [
+              (ctx.pkgs.lib.getExe ctx.pkgs.sbcl)
+              "--script"
+              "scripts/run-coverage.lisp"
+            ];
+            artifacts = [
+              "coverage.dat"
+              "coverage-report"
+            ];
+            timeoutSeconds = 120;
+          };
+
           benchApp = ctx.cl.mkTestApp {
             pname = "cl-xml-kit-bench";
             inherit (ctx) src;
             runner = "run-benchmarks.lisp";
-            lispDependencies = [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
+            lispDependencies = [
+              cl-codec-kit.packages.${ctx.system}.cl-codec-kit
+              cl-weave.packages.${ctx.system}.cl-weave
+              (clHostKitFor ctx.system)
+            ];
             description = "Run cl-xml-kit benchmarks";
-          };
-          # A path: flake carries neither rev nor dirtyRev, so the benchmark
-          # reports the revision as unknown instead of guessing.
-          benchSource =
-            if self ? rev then
-              {
-                revision = self.rev;
-                state = "clean";
-              }
-            else if self ? dirtyRev then
-              {
-                revision = ctx.pkgs.lib.removeSuffix "-dirty" self.dirtyRev;
-                state = "dirty";
-              }
-            else
-              {
-                revision = "unknown";
-                state = "unknown";
-              };
-          benchRunner = ctx.pkgs.writeShellApplication {
-            name = "cl-xml-kit-bench";
-            text = ''
-              export BENCH_REVISION=${ctx.pkgs.lib.escapeShellArg benchSource.revision}
-              export BENCH_SOURCE_STATE=${benchSource.state}
-              exec ${benchApp.program} "$@"
-            '';
           };
         in
         {
           checks.xmlconf = xmlconfCheck;
+          checks.coverage = coverageCheck;
           apps.bench = {
             type = "app";
-            program = ctx.pkgs.lib.getExe benchRunner;
+            program = benchApp.program;
             meta.description = "Run cl-xml-kit benchmarks";
           };
         };
