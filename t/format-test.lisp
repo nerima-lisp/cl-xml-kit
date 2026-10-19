@@ -210,7 +210,7 @@
               :to-be output))))
 
 (describe "continuation callbacks"
-  (it "calls success exactly once with the formatted string"
+  (it "uses the default two-space indent and calls success exactly once"
     (let ((calls 0)
           (formatted nil))
       (format-xml "<a><b/></a>"
@@ -235,6 +235,16 @@
           (setf received condition)))
       (expect calls :to-equal 1)
       (expect (typep received 'xml-well-formedness-error) :to-be-truthy)))
+
+  (it "rejects external entities under the default policy"
+    (let ((received nil))
+      (format-xml "<!DOCTYPE a SYSTEM \"a.dtd\"><a/>"
+        (lambda (output)
+          (declare (ignore output))
+          (error "The default policy must reject external entities."))
+        (lambda (condition)
+          (setf received condition)))
+      (expect (typep received 'xml-external-resource-disabled) :to-be-truthy)))
 
   (it "propagates conditions signalled by either callback unchanged"
     (let ((success-error (make-condition 'simple-error :format-control "success callback"))
