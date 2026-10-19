@@ -29,7 +29,7 @@
              ("<a xmlns:q=\"urn:q\" q:space=\"preserve\">" "  <b/>" "</a>")))
       "formats ~S at indent ~D as the expected lines~*"
       (source indent lines)
-    (expect (format-xml source :indent indent) :to-equal (apply #'format-lines +format-lf+ lines)))
+    (expect (format-result source :indent indent) :to-equal (apply #'format-lines +format-lf+ lines)))
 
   (it-each (("a document indented differently"
              #.(format nil "<a>~%      <b>~%   <c/>~%      </b>~%<d/>~%</a>") 2
@@ -39,33 +39,33 @@
       "formats ~A~* at indent ~D as the expected lines~*"
       (label source indent lines)
     (declare (ignore label))
-    (expect (format-xml source :indent indent) :to-equal (apply #'format-lines +format-lf+ lines))))
+    (expect (format-result source :indent indent) :to-equal (apply #'format-lines +format-lf+ lines))))
 
 (describe "document level"
   (it "copies the XML declaration and the DOCTYPE verbatim and ends with one line break"
-    (expect (format-xml "<?xml version='1.0'?><!DOCTYPE a [<!ENTITY x 'y'>]><a/>")
+    (expect (format-result "<?xml version='1.0'?><!DOCTYPE a [<!ENTITY x 'y'>]><a/>")
             :to-equal (format-lines +format-lf+ "<?xml version='1.0'?>"
                                     "<!DOCTYPE a [<!ENTITY x 'y'>]>" "<a/>")))
 
   (it "drops white space between the nodes of the document"
-    (expect (format-xml (format nil "  <!--x-->~%~%  <a/>  ~%<!--y-->~%"))
+    (expect (format-result (format nil "  <!--x-->~%~%  <a/>  ~%<!--y-->~%"))
             :to-equal (format-lines +format-lf+ "<!--x-->" "<a/>" "<!--y-->")))
 
   (it "formats the whole fixture"
-    (expect (format-xml (format-source +format-lf+))
+    (expect (format-result (format-source +format-lf+))
             :to-equal (apply #'format-lines +format-lf+ +format-expected-lines+)))
 
   (it "keeps a leading U+FEFF and writes CRLF line breaks for a CRLF source"
-    (expect (format-xml (format-source +format-crlf+ t))
+    (expect (format-result (format-source +format-crlf+ t))
             :to-equal (concatenate 'string +format-bom+
                                    (apply #'format-lines +format-crlf+ +format-expected-lines+))))
 
   (it "writes CR line breaks for a CR source"
-    (expect (format-xml (format-source +format-cr+))
+    (expect (format-result (format-source +format-cr+))
             :to-equal (apply #'format-lines +format-cr+ +format-expected-lines+)))
 
   (it "takes the style of the first line break when a source mixes them"
-    (expect (format-xml (format nil "<a>~C~C<b/>~C<c/></a>" #\Return #\Linefeed #\Linefeed))
+    (expect (format-result (format nil "<a>~C~C<b/>~C<c/></a>" #\Return #\Linefeed #\Linefeed))
             :to-equal (format-lines +format-crlf+ "<a>" "  <b/>" "  <c/>" "</a>")))
 
   (it-each (("character data"
@@ -77,10 +77,10 @@
       "writes the line breaks inside ~A~* in the CRLF style of the source~*"
       (label source lines)
     (declare (ignore label))
-    (expect (format-xml source) :to-equal (apply #'format-lines +format-crlf+ lines)))
+    (expect (format-result source) :to-equal (apply #'format-lines +format-crlf+ lines)))
 
   (it "writes a carriage return in character data as a reference"
-    (expect (format-xml "<a>x&#13;y</a>") :to-equal (format-lines +format-lf+ "<a>x&#13;y</a>"))))
+    (expect (format-result "<a>x&#13;y</a>") :to-equal (format-lines +format-lf+ "<a>x&#13;y</a>"))))
 
 (describe "what is not preserved"
   (it-each (("<a z='1' y=\"2\" x='3'/>" "<a z=\"1\" y=\"2\" x=\"3\"/>")
@@ -89,15 +89,15 @@
             ("<a b=\"&#65;&lt;&gt;&quot;&apos;&#9;\"/>" "<a b=\"A&lt;&gt;&quot;'&#9;\"/>"))
       "writes ~S as the single line ~S"
       (source line)
-    (expect (format-xml source) :to-equal (format-lines +format-lf+ line)))
+    (expect (format-result source) :to-equal (format-lines +format-lf+ line)))
 
   (it "expands references to internal entities"
-    (expect (format-xml "<!DOCTYPE a [<!ENTITY e \"x y\">]><a>&e;&e;</a>")
+    (expect (format-result "<!DOCTYPE a [<!ENTITY e \"x y\">]><a>&e;&e;</a>")
             :to-equal (format-lines +format-lf+ "<!DOCTYPE a [<!ENTITY e \"x y\">]>"
                                     "<a>x yx y</a>")))
 
   (it "normalizes white space inside tags and writes <a></a> as <a/>"
-    (expect (format-xml (format nil "<a   x = '1'~%  y='2' ><b ></b ></a >"))
+    (expect (format-result (format nil "<a   x = '1'~%  y='2' ><b ></b ></a >"))
             :to-equal (format-lines +format-lf+ "<a x=\"1\" y=\"2\">" "  <b/>" "</a>")))
 
   (it-each (("<r xmlns=\"u\" xmlns:p=\"v\"><p:a xmlns:p=\"v\"><b xmlns=\"u\" xmlns:q=\"w\"/></p:a></r>"
@@ -108,20 +108,20 @@
               "  </p:a>" "</r>")))
       "keeps the namespace declarations of ~S as written~*"
       (source lines)
-    (expect (format-xml source) :to-equal (apply #'format-lines +format-lf+ lines))))
+    (expect (format-result source) :to-equal (apply #'format-lines +format-lf+ lines))))
 
 (describe "properties"
   (it "is idempotent on every fixture and indent"
     (expect (loop for source in (format-fixtures)
                   nconc (loop for indent in '(0 2 4)
-                              for once = (format-xml source :indent indent)
-                              unless (equal (format-xml once :indent indent) once)
+                              for once = (format-result source :indent indent)
+                              unless (equal (format-result once :indent indent) once)
                                 collect (list indent source)))
             :to-equal nil))
 
   (it "keeps the elements, attributes, text, comments, and processing instructions of every fixture"
     (expect (loop for source in (format-fixtures)
-                  unless (equal (format-content (format-xml source)) (format-content source))
+                  unless (equal (format-content (format-result source)) (format-content source))
                     collect source)
             :to-equal nil))
 
@@ -132,13 +132,13 @@
        (pretty (gen-boolean))
        (bom (gen-boolean)))
     (let* ((source (format-generated-source raw break prolog pretty bom))
-           (once (format-xml source)))
-      (expect (format-xml once) :to-equal once)
+           (once (format-result source)))
+      (expect (format-result once) :to-equal once)
       (expect (format-content once) :to-equal (format-content source))))
 
   (it "leaves xml->string and canonical output as they were"
     (let ((document (parse-xml "<a x='1'><!--c--><b/>t<![CDATA[<]]></a>")))
-      (format-xml "<a x='1'><b/></a>")
+      (format-result "<a x='1'><b/></a>")
       (expect (xml->string document) :to-equal "<a x=\"1\"><!--c--><b/>t&lt;</a>")
       (expect (xml->string document :pretty-print t) :to-equal "<a x=\"1\"><!--c--><b/>t&lt;</a>")
       (expect (xml->canonical-string document) :to-equal "<a x=\"1\"><b></b>t&lt;</a>"))))
@@ -160,7 +160,7 @@
               (xml-external-resource-disabled-identifier "a"))))
       "refuses to format ~S with options ~S"
       (source options expected)
-    (expect (lambda () (apply #'format-xml source options)) :to-signal-xml expected))
+    (expect (lambda () (apply (function format-result) source options)) :to-signal-xml expected))
 
   (it-each (((:max-output-characters 10)
              (xml-resource-limit-exceeded
@@ -174,12 +174,12 @@
       "refuses to format <a><b/></a> under the resource limits~{ ~S~}~*"
       (limits expected)
     (expect (lambda ()
-              (format-xml "<a><b/></a>"
+              (format-result "<a><b/></a>"
                           :resource-limits (apply #'make-xml-resource-limits limits)))
             :to-signal-xml expected))
 
   (it "formats under the caller's external entity policy"
-    (expect (format-xml "<!DOCTYPE a SYSTEM \"a.dtd\"><a><b/></a>" :external-entity-policy :skip)
+    (expect (format-result "<!DOCTYPE a SYSTEM \"a.dtd\"><a><b/></a>" :external-entity-policy :skip)
             :to-equal (format-lines +format-lf+ "<!DOCTYPE a SYSTEM \"a.dtd\">" "<a>" "  <b/>"
                                     "</a>")))
 
@@ -196,7 +196,7 @@
       (label source output)
     (declare (ignore label))
     (expect (lambda ()
-              (cl-xml-kit::%format-verify
+              (format-verify-result
                (edit-context source :path nil)
                output))
             :to-signal-xml '(xml-unsupported-edit (xml-edit-error-reason :verification-failed)
@@ -204,7 +204,72 @@
 
   (it "accepts a result that differs only in layout white space"
     (let ((output (format nil "<a>~%  <b/>~%  <c/>~%</a>~%")))
-      (expect (cl-xml-kit::%format-verify
+      (expect (format-verify-result
                (edit-context "<a><b/><c/></a>" :path nil)
                output)
               :to-be output))))
+
+(describe "continuation callbacks"
+  (it "calls success exactly once with the formatted string"
+    (let ((calls 0)
+          (formatted nil))
+      (format-xml "<a><b/></a>"
+        (lambda (output)
+          (incf calls)
+          (setf formatted output))
+        (lambda (condition)
+          (declare (ignore condition))
+          (error "Failure must not run for valid XML.")))
+      (expect calls :to-equal 1)
+      (expect formatted :to-equal (format-lines +format-lf+ "<a>" "  <b/>" "</a>"))))
+
+  (it "calls failure exactly once with the parse condition"
+    (let ((calls 0)
+          (received nil))
+      (format-xml "<a>"
+        (lambda (output)
+          (declare (ignore output))
+          (error "Success must not run for malformed XML."))
+        (lambda (condition)
+          (incf calls)
+          (setf received condition)))
+      (expect calls :to-equal 1)
+      (expect (typep received 'xml-well-formedness-error) :to-be-truthy)))
+
+  (it "propagates conditions signalled by either callback unchanged"
+    (let ((success-error (make-condition 'simple-error :format-control "success callback"))
+          (failure-error (make-condition 'simple-error :format-control "failure callback")))
+      (expect
+       (handler-case
+           (progn
+             (format-xml "<a/>"
+               (lambda (output)
+                 (declare (ignore output))
+                 (error success-error))
+               #'error)
+             nil)
+         (simple-error (condition) (eq condition success-error)))
+       :to-be-truthy)
+      (expect
+       (handler-case
+           (progn
+             (format-xml "<a>" #'identity
+               (lambda (condition)
+                 (declare (ignore condition))
+                 (error failure-error)))
+             nil)
+         (simple-error (condition) (eq condition failure-error)))
+       :to-be-truthy)))
+
+  (it-fuzz "calls exactly one format callback for markup-like inputs"
+      ((source (gen-string :max-length 40 :alphabet "<>/!?&;#:= abcXYZ")))
+      (:trials 300)
+    (let ((callback-count 0))
+      (format-xml source
+        (lambda (formatted)
+          (incf callback-count)
+          (expect (stringp formatted) :to-be-truthy))
+        (lambda (condition)
+          (incf callback-count)
+          (expect (typep condition 'xml-kit-error) :to-be-truthy)))
+      (expect callback-count :to-equal 1))))

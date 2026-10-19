@@ -204,45 +204,63 @@ NODE belongs to a parsed document, so the last clause is the doctype."
      (list :doctype (xml-doctype-root-name node) (xml-doctype-public-id node)
            (xml-doctype-system-id node) (xml-doctype-internal-subset node)))))
 
-(defun %format-verify (context output)
-  "Return OUTPUT when it parses to the document of CONTEXT apart from layout whitespace, else refuse."
-  (block format-verify
-    (%edit-reparse
-     context output
-     (lambda (document)
-       (unless (equal (%format-signature (path-context-dom context))
-                      (%format-signature document))
-         (%path-refuse context :verification-failed
-                       (xml-message :format-differs)))
-       (return-from format-verify output))
-     (lambda (condition)
-       (error condition)))))
+(defun %format-verify (context output success failure)
+  "Call SUCCESS with OUTPUT when it reparses to CONTEXT apart from layout whitespace,
+or FAILURE with the verification condition."
+  (%edit-reparse
+   context output
+   (lambda (document)
+     (%call-with-callbacks
+      (lambda ()
+        (unless (equal (%format-signature (path-context-dom context))
+                       (%format-signature document))
+          (%path-refuse context :verification-failed
+                        (xml-message :format-differs)))
+        output)
+      success failure))
+   failure))
 
-(defun format-xml (source &key (indent 2)
-                               (resource-limits *default-xml-resource-limits*)
-                               (external-entity-policy :reject))
-  "Return SOURCE laid out with one node per line, indented by INDENT spaces per level.
+(defun format-xml (source success failure
+                   &key (indent 2)
+                     (resource-limits *default-xml-resource-limits*)
+                     (external-entity-policy :reject))
+  "Call SUCCESS once with the formatted string, or FAILURE once with an XML condition.
 
-The XML declaration and DOCTYPE are copied from SOURCE, a leading U+FEFF is kept,
-and every line break is in the style of the first one in SOURCE. An element whose
-content, apart from whitespace-only text, is only elements, comments, and
-processing instructions puts each on its own line; any other element keeps its
-content as it is, as does one under xml:space=\"preserve\". Attribute quotes
-become double quotes, CDATA sections and references become escaped text, and
-whitespace inside tags is normalized. The result is parsed again and must match
-SOURCE apart from that whitespace, otherwise XML-UNSUPPORTED-EDIT with reason
-:VERIFICATION-FAILED."
-  (check-argument source stringp xml-input-error :label-must-be-string
-                  :format-arguments ("SOURCE"))
-  (unless (and (integerp indent) (not (minusp indent)))
-    (xml-error 'xml-input-error :indent-must-be-non-negative))
-  (block format-xml
-    (%path-context
-     source nil
-     (lambda (context)
-       (return-from format-xml
-         (%format-verify context (%format-document context indent))))
-     (lambda (condition)
-       (error condition))
-     :resource-limits resource-limits
-     :external-entity-policy external-entity-policy)))
+INDENT is spaces per level (default 2) and must be a non-negative integer.
+RESOURCE-LIMITS bounds parsing and output; it defaults to
+*DEFAULT-XML-RESOURCE-LIMITS*. EXTERNAL-ENTITY-POLICY defaults to :REJECT:
+:REJECT refuses external entities, and :SKIP skips them.
+A leading U+FEFF remains first, before any XML declaration. The declaration and
+DOCTYPE are copied verbatim. New line breaks between formatted nodes use the
+first line-break style in SOURCE, or LF when there is none.
+When an element has at least one element, comment, or processing-instruction
+child and no non-whitespace text, block layout drops whitespace-only text and
+puts each remaining child on its own line. Block layout is suppressed under
+xml:space preserve and within mixed content, including nested elements. The
+nearest valid xml:space value controls preservation: preserve retains
+whitespace-only text; default resets preservation from an ancestor.
+Attribute quotes become double quotes. CDATA sections become text, character
+data is escaped as needed, and spacing around tag and attribute syntax is
+normalized. The result is reparsed and must match SOURCE apart from layout
+whitespace, or FAILURE receives the verification condition. Conditions signalled
+by either callback propagate unchanged."
+  (%call-with-callbacks
+   (lambda ()
+     (check-argument source stringp xml-input-error :label-must-be-string
+                     :format-arguments ("SOURCE"))
+     (unless (and (integerp indent) (not (minusp indent)))
+       (xml-error 'xml-input-error :indent-must-be-non-negative))
+     source)
+   (lambda (source)
+     (%path-context
+      source nil
+      (lambda (context)
+        (%call-with-callbacks
+         (lambda () (%format-document context indent))
+         (lambda (output)
+           (%format-verify context output success failure))
+         failure))
+      failure
+      :resource-limits resource-limits
+      :external-entity-policy external-entity-policy))
+   failure))

@@ -206,3 +206,15 @@ signals a destructuring error."
 A condition without a resource-limit cause signals NO-APPLICABLE-METHOD or a type
 error, which fails the test that reads it."
   (xml-resource-limit-exceeded-kind (xml-edit-value-error-cause condition)))
+
+(defun format-verify-result (context output)
+  "Return OUTPUT after verification succeeds, signaling the failure condition."
+  (cl-weave:with-continuation-result (result success)
+      (cl-xml-kit::%format-verify context output #'success #'error)
+    result))
+
+(defun format-result (source &rest options)
+  "Return the formatted result, signaling the condition delivered on failure."
+  (cl-weave:with-continuation-result (result success)
+      (apply #'cl-xml-kit:format-xml source #'success #'error options)
+    result))
