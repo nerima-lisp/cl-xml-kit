@@ -103,18 +103,22 @@
                         (:end-element nil nil) (:comment "e" nil)
                         (:characters " " nil) (:end-document nil nil))))
 
-  (it "emits a skipped-entity event for a skipped reference after an empty root"
-    (expect (mapcar #'event-summary
-                    (pull-events (concatenate 'string +skip-doctype+ "<r/>&x;")
-                                 :external-entity-policy :skip))
-            :to-equal '((:start-document nil nil) (:doctype nil nil)
-                        (:start-element "r" nil) (:end-element "r" nil)
-                        (:skipped-external-entity "x" nil) (:end-document nil nil))))
+  (it "rejects a skipped external entity reference after an empty root"
+    (expect (lambda ()
+              (pull-events (concatenate 'string +skip-doctype+ "<r/>&x;")
+                           :external-entity-policy :skip))
+            :to-signal-xml `(xml-well-formedness-error
+                             (xml-well-formedness-error-constraint :well-formedness)
+                             (xml-well-formedness-error-expected :root-element)
+                             (condition-offset ,(+ (length +skip-doctype+) 4)))))
 
   (it-each (("<r/><s/>" :single-root "A document has one root element." 4)
             ("" :root-element "A document needs a root element." 0)
             ("<![CDATA[x]]><r/>" :root-element "CDATA is outside the root." 0)
             ("&amp;<r/>" :root-element "An entity is outside the root." 0)
+            ("<r/>&amp;" :root-element "An entity is outside the root." 4)
+            ("<r/> &amp;" :root-element "An entity is outside the root." 5)
+            ("<r/>&lt;x" :root-element "An entity is outside the root." 4)
             ("<r></r>&amp;" :root-element "An entity is outside the root." 7)
             ("text<r/>" :root-element "Non-whitespace text is outside the root." 0)
             ("<r/>text" :root-element "Non-whitespace text is outside the root." 4))
