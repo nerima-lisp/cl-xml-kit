@@ -17,16 +17,22 @@
     (xml-error 'xml-unsupported-edit :namespace-declaration-not-editable
                :condition-initargs (:path path :reason :namespace-declaration))))
 
-(defun %edit-single-hit (context parsed)
-  "Return the one element that the element steps of PARSED select."
-  (let ((hits (%path-resolve-elements context parsed)))
-    (cond
-      ((null hits)
-       (%path-error context :no-match (xml-message :path-matches-nothing)))
-      ((rest hits)
-       (%path-error context :multiple-matches
-                    (xml-message :path-matches-several (length hits))))
-      (t (first hits)))))
+(defun %edit-single-hit (context parsed success failure)
+  "Call SUCCESS with the single selected hit, or FAILURE with the condition."
+  (%path-resolve-elements
+   context parsed
+   (lambda (hits)
+     (%call-with-callbacks
+      (lambda ()
+        (cond
+          ((null hits)
+           (%path-error context :no-match (xml-message :path-matches-nothing)))
+          ((rest hits)
+           (%path-error context :multiple-matches
+                        (xml-message :path-matches-several (length hits))))
+          (t (first hits))))
+      success failure))
+   failure))
 
 (defun %edit-check-attlist (context hit)
   "Refuse attribute edits on an element that an ATTLIST declaration governs."
@@ -70,7 +76,6 @@
               (remove-if-not #'span-element-p (span-element-children element))))))
 
 (defun %edit-line-break-before-p (source attribute)
-  "Return true when the whitespace before ATTRIBUTE contains a line break."
   (find-if #'%line-break-char-p source
            :start (span-attribute-space-start attribute)
            :end (span-attribute-name-start attribute)))
@@ -95,7 +100,6 @@
                  (string quote-char))))
 
 (defun %edit-attribute-replaced (dom-element qname value)
-  "Return the attributes of DOM-ELEMENT with the one written QNAME given VALUE."
   (mapcar (lambda (attribute)
             (if (string= qname (%path-lexical-name (xml-attribute-name attribute)))
                 (make-xml-attribute :name (xml-attribute-name attribute) :value value)
@@ -122,47 +126,64 @@ An unbound prefix in QNAME signals XML-PATH-ERROR with reason :UNDECLARED-PREFIX
                    :value value)))))
 
 (defun %edit-expected-attributes (context hit attributes)
-  "Return the document that results from giving the element of HIT the DOM ATTRIBUTES."
   (%dom-rebuild (path-context-dom context) (%path-hit-ordinal-path hit)
                 (lambda (element) (%dom-element-with element :attributes attributes))))
 
-(defun %edit-set-attribute (context parsed value)
-  (let* ((hit (%edit-single-hit context parsed))
-         (element (path-hit-element hit))
-         (qname (parsed-path-attribute-name parsed))
-         (attribute (%path-find-attribute element qname)))
-    (%edit-check-attlist context hit)
-    (if attribute
-        (%edit-finish context
-                      (1+ (span-attribute-value-start attribute))
+(defun %edit-set-attribute (context parsed value success failure)
+  (%edit-single-hit
+   context parsed
+   (lambda (hit)
+     (%call-with-callbacks
+      (lambda ()
+        (let* ((element (path-hit-element hit))
+               (qname (parsed-path-attribute-name parsed))
+               (attribute (%path-find-attribute element qname)))
+          (%edit-check-attlist context hit)
+          (if attribute
+              (values (1+ (span-attribute-value-start attribute))
                       (1- (span-attribute-value-end attribute))
                       (%edit-escape-attribute value (span-attribute-quote-char attribute))
                       (%edit-expected-attributes
                        context hit
                        (%edit-attribute-replaced (car (path-hit-chain hit)) qname value)))
-        (let ((point (if (span-element-attributes element)
-                         (span-attribute-value-end (car (last (span-element-attributes element))))
-                         (span-element-name-end element))))
-          (%edit-finish context point point
+              (let ((point (if (span-element-attributes element)
+                               (span-attribute-value-end
+                                (car (last (span-element-attributes element))))
+                               (span-element-name-end element))))
+                (values point point
                         (%edit-new-attribute-text context element qname value)
                         (%edit-expected-attributes
                          context hit
                          (%edit-attribute-added context hit qname value)))))))
+      (lambda (start end replacement expected)
+        (%edit-finish context start end replacement expected success failure))
+      failure))
+   failure))
 
-(defun %edit-delete-attribute (context parsed)
-  (let ((hit (%edit-single-hit context parsed))
-        (qname (parsed-path-attribute-name parsed)))
-    (%edit-check-attlist context hit)
-    (let ((attribute (%path-find-attribute (path-hit-element hit) qname)))
-      (unless attribute
-        (%path-error context :no-match (xml-message :path-matches-nothing)))
-      (%edit-finish context
-                    (span-attribute-space-start attribute)
-                    (span-attribute-value-end attribute)
-                    ""
-                    (%edit-expected-attributes
-                     context hit
-                     (remove qname (xml-element-attributes (car (path-hit-chain hit)))
-                             :key (lambda (candidate)
-                                    (%path-lexical-name (xml-attribute-name candidate)))
-                             :test #'string=))))))
+(defun %edit-delete-attribute (context parsed success failure)
+  (%edit-single-hit
+   context parsed
+   (lambda (hit)
+     (%call-with-callbacks
+      (lambda ()
+        (let* ((qname (parsed-path-attribute-name parsed))
+               (element (path-hit-element hit))
+               (attributes (xml-element-attributes (car (path-hit-chain hit)))))
+          (%edit-check-attlist context hit)
+          (let ((attribute (%path-find-attribute element qname)))
+            (unless attribute
+              (%path-error context :no-match (xml-message :path-matches-nothing)))
+            (values
+             (span-attribute-space-start attribute)
+             (span-attribute-value-end attribute)
+             ""
+             (%edit-expected-attributes
+              context hit
+              (remove qname attributes
+                      :key (lambda (candidate)
+                             (%path-lexical-name (xml-attribute-name candidate)))
+                      :test #'string=))))))
+      (lambda (start end replacement expected)
+        (%edit-finish context start end replacement expected success failure))
+      failure))
+   failure))
