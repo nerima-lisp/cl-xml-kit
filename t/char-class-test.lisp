@@ -1,4 +1,5 @@
 (in-package #:cl-xml-kit/test)
+(declaim (notinline classify classify-string))
 
 (defun classify (predicate code)
   "Call the global function PREDICATE on the character with CODE.
@@ -6,6 +7,9 @@ The library declares its predicates inline, so its own callers run open-coded
 copies; only a call through the symbol runs, and covers, the global definition."
   (funcall predicate (or (code-char code)
                          (error "Unicode code point #X~X is unavailable." code))))
+(defun classify-string (predicate codes)
+  "Call PREDICATE through its global function binding on a string."
+  (funcall predicate (map (quote simple-string) (function code-char) codes)))
 
 (describe "name characters"
   ;; Expected values are read off XML 1.0 Fifth Edition, production [4]
@@ -51,7 +55,7 @@ copies; only a call through the symbol runs, and covers, the global definition."
             ((#x61 #x20) nil))
       "classifies the code sequence ~S as an NCName ~S"
       (codes expected)
-    (expect (funcall 'cl-xml-kit::xml-ncname-p (map 'simple-string #'code-char codes))
+    (expect (classify-string 'cl-xml-kit::xml-ncname-p codes)
             :to-be expected)))
 
 (describe "XML characters and whitespace"
@@ -75,7 +79,7 @@ copies; only a call through the symbol runs, and covers, the global definition."
             ((#x20 #x78) nil) ((#x78 #x20) nil) ((#x20 #xA0) nil))
       "classifies the code sequence ~S as XML S ~S"
       (codes expected)
-    (expect (funcall 'cl-xml-kit::xml-space-p (map 'simple-string #'code-char codes))
+    (expect (classify-string (quote cl-xml-kit::xml-space-p) codes)
             :to-be expected)))
 
 (describe "public identifier characters"
