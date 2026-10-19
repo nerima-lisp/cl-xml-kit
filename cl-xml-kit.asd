@@ -89,6 +89,7 @@
                (:file "helpers-namespaces")
                (:file "helpers-parser")
                (:file "helpers-serializer")
+               (:file "helpers-serializer-generators")
                (:file "helpers-format")
                (:file "helpers-spans")
                (:file "helpers-corpus")

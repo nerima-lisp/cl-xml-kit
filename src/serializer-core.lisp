@@ -218,10 +218,5 @@ with a colon, so only an empty prefix is left to refuse here."
   (%write-escaped-attribute state (xml-attribute-value attribute) attribute path)
   (%serializer-write state "\"" attribute path))
 
-(declaim (ftype function %write-node))
+(declaim (ftype function xml-node-p %write-node))
 
-(defun xml-node-p (object)
-  "Return true when OBJECT is any serializable XML node."
-  (or (xml-document-p object) (xml-element-p object) (xml-attribute-p object)
-      (xml-text-p object) (xml-comment-p object)
-      (xml-processing-instruction-p object) (xml-doctype-p object)))

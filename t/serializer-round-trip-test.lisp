@@ -9,35 +9,42 @@
   "Sources holding escapes and references, default, prefixed, redeclared, and
 undeclared namespaces, and empty elements, PIs, comments, and CDATA boundaries.")
 
-(it-each ((0 :ordinary) (0 :canonical) (1 :ordinary) (1 :canonical) (2 :ordinary) (2 :canonical))
-    "round-trips round-trip source ~D through ~S output"
-    (index mode)
-  (expect (parse-xml (nth index +round-trip-sources+)) :to-round-trip mode))
+(describe "round-trip fixtures"
+  (it-each ((0 :ordinary) (0 :canonical) (1 :ordinary) (1 :canonical) (2 :ordinary) (2 :canonical))
+      "round-trips round-trip source ~D through ~S output"
+      (index mode)
+    (expect (parse-xml (nth index +round-trip-sources+)) :to-round-trip mode))
 
-(it "writes escaped text, attribute white space references, and supplementary characters"
-  (expect (xml->string (parse-xml (first +round-trip-sources+)))
-          :to-equal #.(format nil "<root attr=\"&gt;&amp;&quot;'&#9;&#10;&#13;\">&lt;>&amp;\"' ~C</root>"
-                              (code-char #x1F600))))
+  (it "writes escaped text, attribute white space references, and supplementary characters"
+    (expect (xml->string (parse-xml (first +round-trip-sources+)))
+            :to-equal #.(format nil "<root attr=\"&gt;&amp;&quot;'&#9;&#10;&#13;\">&lt;>&amp;\"' ~C</root>"
+                                (code-char #x1F600))))
 
-(it-each (("with an unprefixed namespaced attribute"
-           (:element "root" :attributes ((:attribute "id" "7" :uri "urn:attribute"))
-            :children ("value"))
-           :ordinary)
-          ("with an unprefixed namespaced attribute"
-           (:element "root" :attributes ((:attribute "id" "7" :uri "urn:attribute"))
-            :children ("value"))
-           :canonical)
-          ("with < and & in an attribute value"
-           (:element "root" :attributes ((:attribute "v" "a<b&c"))) :ordinary)
-          ("with ]]> in text" (:element "root" :children ("left]]>right")) :ordinary))
-    "round-trips a tree ~A~* through ~S output"
-    (label spec mode)
-  (declare (ignore label))
-  (expect (node-from-spec spec) :to-round-trip mode))
+  (it-each (("with an unprefixed namespaced attribute"
+             (:element "root" :attributes ((:attribute "id" "7" :uri "urn:attribute"))
+              :children ("value"))
+             :ordinary)
+            ("with an unprefixed namespaced attribute"
+             (:element "root" :attributes ((:attribute "id" "7" :uri "urn:attribute"))
+              :children ("value"))
+             :canonical)
+            ("with < and & in an attribute value"
+             (:element "root" :attributes ((:attribute "v" "a<b&c"))) :ordinary)
+            ("with ]]> in text" (:element "root" :children ("left]]>right")) :ordinary))
+      "round-trips a tree ~A~* through ~S output"
+      (label spec mode)
+    (declare (ignore label))
+    (expect (node-from-spec spec) :to-round-trip mode))
 
-(it "writes a text ]]> boundary with an escaped greater-than sign"
-  (expect (xml->string (node-from-spec '(:element "root" :children ("left]]>right"))))
-          :to-equal "<root>left]]&gt;right</root>"))
+  (it "writes a text ]]> boundary with an escaped greater-than sign"
+    (expect (xml->string (node-from-spec '(:element "root" :children ("left]]>right"))))
+            :to-equal "<root>left]]&gt;right</root>"))
+
+  (it "matches the nested namespace serialization snapshot"
+    (let ((serialized (xml->string (parse-xml (nth 1 +round-trip-sources+)))))
+      (let ((cl-weave:*snapshot-directory*
+              (asdf:system-relative-pathname "cl-xml-kit/test" "t/__snapshots__/")))
+        (expect serialized :to-match-snapshot "serializer/nested-namespaces")))))
 
 (defun round-trip-whitespace-strings ()
   "Return every string of one to three characters over a, space, tab, line feed, and carriage return."
@@ -51,17 +58,18 @@ undeclared namespaces, and empty elements, PIs, comments, and CDATA boundaries."
                                                           (string character)))))
           append strings)))
 
-(it "round-trips carriage returns, line feeds, and tabs in text and attribute values"
-  (expect
-   (loop for data in (round-trip-whitespace-strings)
-         for element = (node-from-spec `(:element "root"
-                                         :attributes ((:attribute "value" ,data))
-                                         :children (,data)))
-         for root = (first (xml-document-children (parse-xml (xml->string element))))
-         unless (and (equal (xml-attribute-value (first (xml-element-attributes root)))
-                            data)
-                     (equal (apply #'concatenate 'string
-                                   (mapcar #'xml-text-data (xml-element-children root)))
-                            data))
-           collect data)
-   :to-equal nil))
+(describe "whitespace values"
+  (it "round-trips carriage returns, line feeds, and tabs in text and attribute values"
+    (expect
+     (loop for data in (round-trip-whitespace-strings)
+           for element = (node-from-spec `(:element "root"
+                                           :attributes ((:attribute "value" ,data))
+                                           :children (,data)))
+           for root = (first (xml-document-children (parse-xml (xml->string element))))
+           unless (and (equal (xml-attribute-value (first (xml-element-attributes root)))
+                              data)
+                       (equal (apply #'concatenate 'string
+                                     (mapcar #'xml-text-data (xml-element-children root)))
+                              data))
+             collect data)
+     :to-equal nil)))

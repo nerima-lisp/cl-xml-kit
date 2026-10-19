@@ -26,12 +26,25 @@
     (expect (xml->canonical-string (node-from-spec spec)) :to-equal expected)))
 
 (describe "documents"
-  (it "writes every node kind of a document"
-    (expect (xml->string (node-from-spec
-                          '(:document (:doctype "root")
-                            (:element "root" :attributes ((:attribute "id" "1"))
-                             :children ("text" (:comment "comment") (:pi "pi" "data"))))))
-            :to-equal "<!DOCTYPE root><root id=\"1\">text<!--comment--><?pi data?></root>"))
+  (describe "node dispatch"
+    (it "writes every node kind of a document"
+      (expect (xml->string (node-from-spec
+                            '(:document (:doctype "root")
+                              (:element "root" :attributes ((:attribute "id" "1"))
+                               :children ("text" (:comment "comment") (:pi "pi" "data"))))))
+              :to-equal "<!DOCTYPE root><root id=\"1\">text<!--comment--><?pi data?></root>"))
+
+    (it-each (("document" (:document (:element "root")) "<root/>")
+              ("element" (:element "root") "<root/>")
+              ("attribute" (:attribute "id" "1") "id=\"1\"")
+              ("text" "text" "text")
+              ("comment" (:comment "note") "<!--note-->")
+              ("processing instruction" (:pi "target" "data") "<?target data?>")
+              ("doctype" (:doctype "root") "<!DOCTYPE root>"))
+        "dispatches ~A to its serializer"
+        (label spec expected)
+      (declare (ignore label))
+      (expect (xml->string (node-from-spec spec)) :to-equal expected)))
 
   (it "omits comments and writes a processing instruction without data with a space in canonical form"
     (expect (xml->canonical-string (node-from-spec '(:document (:comment "ignored") (:pi "pi"))))
