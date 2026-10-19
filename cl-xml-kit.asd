@@ -157,6 +157,7 @@
   :license "MIT"
   :version "1.0.0"
   :homepage "https://github.com/nerima-lisp/cl-xml-kit"
+  :bug-tracker "https://github.com/nerima-lisp/cl-xml-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-xml-kit.git")
   :depends-on ("cl-xml-kit" (:require "sb-md5"))
   :pathname "benchmark"
