@@ -32,6 +32,22 @@
   '((probe-code-p "Return true for an underscore." :codes (#x5F) :exclude-chars (#\_)))
   "A character-class table that excludes a character only a code lists.")
 
+(defparameter *probe-parser-token-rules*
+  (quote ((:content
+           ((:text :cdata) probe-parser-character-data)
+           (:comment probe-parser-comment)
+           (:otherwise nil))
+          (:top-level
+           (:eof probe-parser-end-document)
+           (:otherwise probe-parser-ignore-token))))
+  "A parser-token table with a grouped kind and nil fallback.")
+
+(defparameter *probe-serializer-node-rules*
+  (quote ((probe-document-p probe-write-document)
+          (probe-text-p probe-write-text)
+          (:otherwise probe-write-fallback)))
+  "A serializer-node table with two predicates and a fallback.")
+
 (defun evaluate-quietly (form)
   "Evaluate FORM in the test package with redefinition warnings muffled and
 return its value. DEFSTRUCT interns its accessors in *PACKAGE*, so the package
@@ -195,3 +211,36 @@ the report print relative to the test package."
       (specs-variable message)
     (expect (expansion-error-message (list 'cl-xml-kit::define-char-classes specs-variable))
             :to-equal message)))
+
+(describe "dispatch macro expansion"
+  (it "expands parser rules into case clauses with direct handlers and nil fallback"
+    (expect (quote
+             (cl-xml-kit::define-parser-token-dispatch
+               probe-parser-token-dispatch *probe-parser-token-rules* :content))
+            :to-expand-to
+            (quote
+             (defun probe-parser-token-dispatch (cl-xml-kit::parser cl-xml-kit::token)
+               (case (cl-xml-kit::xml-token-kind cl-xml-kit::token)
+                 ((:text :cdata)
+                  (probe-parser-character-data cl-xml-kit::parser cl-xml-kit::token))
+                 (:comment (probe-parser-comment cl-xml-kit::parser cl-xml-kit::token))
+                 (otherwise nil))))))
+
+  (it "expands serializer predicates and writer clauses with a direct fallback"
+    (expect (quote
+             (cl-xml-kit::define-serializer-node-dispatch
+               *probe-serializer-node-rules*))
+            :to-expand-to
+            (quote
+             (progn
+               (defun cl-xml-kit::xml-node-p (cl-xml-kit::object)
+                 (or (probe-document-p cl-xml-kit::object)
+                     (probe-text-p cl-xml-kit::object)))
+               (defun cl-xml-kit::%write-node (cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path)
+                 (cond
+                   ((probe-document-p cl-xml-kit::object)
+                    (probe-write-document cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path))
+                   ((probe-text-p cl-xml-kit::object)
+                    (probe-write-text cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path))
+                   (t
+                    (probe-write-fallback cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path)))))))))

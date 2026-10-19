@@ -28,6 +28,8 @@
                (:file "data/resource-limits")
                (:file "data/token-kinds")
                (:file "data/event-kinds")
+               (:file "data/parser-token-rules")
+               (:file "data/serializer-node-rules")
                (:file "resource-limits")
                (:file "nodes")
                (:file "events")

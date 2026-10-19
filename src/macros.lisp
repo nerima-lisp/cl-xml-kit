@@ -207,3 +207,38 @@ codes, characters, and inclusive code ranges; nothing is looked up at run time."
                                      `(<= ,(first range) code ,(second range)))
                                    ranges)))))))
           specs))))
+
+(defmacro define-parser-token-dispatch (function-name rules-variable context)
+  "Define a parser token dispatcher from one context in a compile-time rule table."
+  (let ((context-rules (assoc context (symbol-value rules-variable))))
+    (unless context-rules
+      (error "Unknown parser token dispatch context ~S in ~S."
+             context rules-variable))
+    `(defun ,function-name (parser token)
+       (case (xml-token-kind token)
+         ,@(mapcar
+            (lambda (rule)
+              (destructuring-bind (kind handler) rule
+                `(,(if (eq kind :otherwise) 'otherwise kind)
+                  ,(when handler `(,handler parser token)))))
+            (cdr context-rules))))))
+
+(defmacro define-serializer-node-dispatch (rules-variable)
+  "Generate node predicates and writer dispatch from a compile-time rule table."
+  (let* ((rules (symbol-value rules-variable))
+         (node-rules (remove :otherwise rules :key #'first))
+         (otherwise-rule (assoc :otherwise rules)))
+    (unless (and otherwise-rule (second otherwise-rule))
+      (error "Serializer node dispatch table ~S needs an :OTHERWISE handler."
+             rules-variable))
+    `(progn
+       (defun xml-node-p (object)
+         (or ,@(mapcar (lambda (rule) `(,(first rule) object)) node-rules)))
+       (defun %write-node (state object scope level path)
+         (cond
+           ,@(mapcar
+              (lambda (rule)
+                `((,(first rule) object)
+                  (,(second rule) state object scope level path)))
+              node-rules)
+           (t (,(second otherwise-rule) state object scope level path)))))))
