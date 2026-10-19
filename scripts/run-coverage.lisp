@@ -33,7 +33,7 @@
     files)
   (progn
   (defun coverage-top-level-forms (pathname)
-    (let* ((source (uiop:read-file-string pathname :external-format :utf-8))
+    (let* ((source (host-kit:read-file-string pathname :external-format :utf-8))
            (eof (gensym "EOF"))
            (*read-eval* t)
            (*package* (find-package :cl-user))
