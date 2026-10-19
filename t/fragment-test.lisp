@@ -110,3 +110,64 @@
                              (xml-edit-error-path "/target")
                              (edit-cause-type xml-resource-limit-exceeded)
                              (edit-cause-limit-kind :max-attributes-per-element)))))
+(describe "continuation callbacks"
+  (it "calls success once with the element and trimmed fragment"
+    (let ((context (edit-context +fragment-source+ :path "/target"))
+          (chain (edit-chain +fragment-source+))
+          (calls 0))
+      (cl-weave:with-continuation-values (captured success)
+          (cl-xml-kit::%edit-fragment-element
+           context chain "  <a/>  "
+           (lambda (&rest values)
+             (incf calls)
+             (apply #'success values))
+           #'error)
+        (expect calls :to-equal 1)
+        (expect (length captured) :to-equal 2)
+        (expect (xml-element-p (first captured)) :to-be-truthy)
+        (expect (second captured) :to-equal "<a/>"))))
+
+  (it "calls failure once with the fragment condition"
+    (let ((context (edit-context +fragment-source+ :path "/target"))
+          (chain (edit-chain +fragment-source+))
+          (calls 0)
+          (received nil))
+      (cl-weave:with-continuation-result (condition failure)
+          (cl-xml-kit::%edit-fragment-element
+           context chain "<a>" #'identity
+           (lambda (condition)
+             (incf calls)
+             (funcall #'failure condition)))
+        (setf received condition))
+      (expect calls :to-equal 1)
+      (expect (xml-edit-error-reason received) :to-equal :malformed-fragment)
+      (expect (edit-cause-type received) :to-equal 'xml-well-formedness-error)))
+
+  (it "propagates errors signalled by either callback"
+    (let ((context (edit-context +fragment-source+ :path "/target"))
+          (chain (edit-chain +fragment-source+))
+          (success-error (make-condition 'simple-error :format-control "success callback"))
+          (failure-error (make-condition 'simple-error :format-control "failure callback")))
+      (expect
+       (handler-case
+           (progn
+             (cl-xml-kit::%edit-fragment-element
+              context chain "<a/>"
+              (lambda (&rest values)
+                (declare (ignore values))
+                (error success-error))
+              #'error)
+             nil)
+         (simple-error (condition) (eq condition success-error)))
+       :to-be-truthy)
+      (expect
+       (handler-case
+           (progn
+             (cl-xml-kit::%edit-fragment-element
+              context chain "<a>" #'identity
+              (lambda (condition)
+                (declare (ignore condition))
+                (error failure-error)))
+             nil)
+         (simple-error (condition) (eq condition failure-error)))
+       :to-be-truthy))))

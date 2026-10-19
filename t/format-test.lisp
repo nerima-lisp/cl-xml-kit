@@ -197,9 +197,7 @@
     (declare (ignore label))
     (expect (lambda ()
               (cl-xml-kit::%format-verify
-               (cl-xml-kit::%path-context source nil
-                                          :resource-limits *default-xml-resource-limits*
-                                          :external-entity-policy :reject)
+               (edit-context source :path nil)
                output))
             :to-signal-xml '(xml-unsupported-edit (xml-edit-error-reason :verification-failed)
                                                   (xml-edit-error-path nil))))
@@ -207,8 +205,6 @@
   (it "accepts a result that differs only in layout white space"
     (let ((output (format nil "<a>~%  <b/>~%  <c/>~%</a>~%")))
       (expect (cl-xml-kit::%format-verify
-               (cl-xml-kit::%path-context "<a><b/><c/></a>" nil
-                                          :resource-limits *default-xml-resource-limits*
-                                          :external-entity-policy :reject)
+               (edit-context "<a><b/><c/></a>" :path nil)
                output)
               :to-be output))))

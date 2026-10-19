@@ -126,21 +126,20 @@
 (describe "verifying a candidate"
   (it "returns a candidate that parses to the expected document"
     (let ((candidate "<root a=\"2\"><item>x</item></root>"))
-      (expect (eq (cl-xml-kit::%edit-verify (edit-context "<root a=\"1\"><item>x</item></root>")
+      (expect (eq (edit-verify-result (edit-context "<root a=\"1\"><item>x</item></root>")
                                             candidate (parse-xml candidate))
                   candidate)
               :to-be-truthy)))
 
   (it "reads a candidate that starts with U+FEFF"
     (let ((candidate (concatenate 'string +spans-bom+ "<root a=\"2\"/>")))
-      (expect (cl-xml-kit::%edit-verify
-               (edit-context (concatenate 'string +spans-bom+ "<root a=\"1\"/>"))
+      (expect (edit-verify-result (edit-context (concatenate 'string +spans-bom+ "<root a=\"1\"/>"))
                candidate (parse-xml "<root a=\"2\"/>"))
               :to-equal candidate)))
 
   (it "accepts whitespace differences in the lenient element"
     (let ((candidate (spans-lines "<root a=\"1\">~%<item>x</item>~%</root>")))
-      (expect (cl-xml-kit::%edit-verify (edit-context "<root a=\"1\"><item>x</item></root>")
+      (expect (edit-verify-result (edit-context "<root a=\"1\"><item>x</item></root>")
                                         candidate
                                         (parse-xml "<root a=\"1\"><item>x</item></root>")
                                         :lenient-ordinals nil)
@@ -157,7 +156,7 @@
       "refuses the candidate ~S for the expected ~S with lenient ordinals ~S: ~A"
       (candidate expected lenient message)
     (expect (lambda ()
-              (cl-xml-kit::%edit-verify (edit-context "<root a=\"1\"><item>x</item></root>")
+              (edit-verify-result (edit-context "<root a=\"1\"><item>x</item></root>")
                                         (spans-lines candidate) (parse-xml expected)
                                         :lenient-ordinals lenient))
             :to-signal-xml (list 'xml-unsupported-edit
@@ -167,8 +166,7 @@
 
   (it "refuses a candidate that breaks a parser limit of the caller, keeping the limit as the cause"
     (expect (lambda ()
-              (cl-xml-kit::%edit-verify
-               (edit-context "<root><a/></root>"
+              (edit-verify-result (edit-context "<root><a/></root>"
                              :resource-limits (make-xml-resource-limits :max-depth 2))
                "<root><a><b/></a></root>" (parse-xml "<root><a><b/></a></root>")))
             :to-signal-xml '(xml-edit-value-error
@@ -177,16 +175,75 @@
                              (edit-cause-limit-kind :max-depth))))
 
   (it "splices and verifies in one step"
-    (expect (cl-xml-kit::%edit-finish (edit-context "<root a=\"1\"><item>x</item></root>")
+    (expect (edit-finish-result (edit-context "<root a=\"1\"><item>x</item></root>")
                                       9 10 "2"
                                       (parse-xml "<root a=\"2\"><item>x</item></root>"))
             :to-equal "<root a=\"2\"><item>x</item></root>"))
 
   (it "refuses a splice whose result differs from the expected document"
     (expect (lambda ()
-              (cl-xml-kit::%edit-finish (edit-context "<root a=\"1\"><item>x</item></root>")
+              (edit-finish-result (edit-context "<root a=\"1\"><item>x</item></root>")
                                         9 10 "2"
                                         (parse-xml "<root a=\"1\"><item>x</item></root>")))
             :to-signal-xml '(xml-unsupported-edit
                              (xml-edit-error-reason :verification-failed)
                              (xml-edit-error-path "/root")))))
+(describe "verification callbacks"
+  (it "calls success once after a splice and reparse"
+    (let ((context (edit-context "<a x=\"1\"/>"))
+          (expected (parse-xml "<a x=\"2\"/>"))
+          (calls 0)
+          (result nil))
+      (cl-weave:with-continuation-result (candidate success)
+          (cl-xml-kit::%edit-finish
+           context 6 7 "2" expected
+           (lambda (source)
+             (incf calls)
+             (funcall #'success source))
+           #'error)
+        (setf result candidate))
+      (expect calls :to-equal 1)
+      (expect result :to-equal "<a x=\"2\"/>")))
+
+  (it "calls failure once with a reparse refusal"
+    (let ((context (edit-context "<a/>"))
+          (calls 0)
+          (received nil))
+      (cl-weave:with-continuation-result (condition failure)
+          (cl-xml-kit::%edit-reparse
+           context "<a>" #'identity
+           (lambda (condition)
+             (incf calls)
+             (funcall #'failure condition)))
+        (setf received condition))
+      (expect calls :to-equal 1)
+      (expect (typep received 'xml-unsupported-edit) :to-be-truthy)
+      (expect (xml-edit-error-reason received) :to-equal :verification-failed)))
+
+  (it "propagates errors signalled by either reparse callback"
+    (let ((context (edit-context "<a/>"))
+          (success-error (make-condition 'simple-error :format-control "success callback"))
+          (failure-error (make-condition 'simple-error :format-control "failure callback")))
+      (expect
+       (handler-case
+           (progn
+             (cl-xml-kit::%edit-reparse
+              context "<a/>"
+              (lambda (document)
+                (declare (ignore document))
+                (error success-error))
+              #'error)
+             nil)
+         (simple-error (condition) (eq condition success-error)))
+       :to-be-truthy)
+      (expect
+       (handler-case
+           (progn
+             (cl-xml-kit::%edit-reparse
+              context "<a>" #'identity
+              (lambda (condition)
+                (declare (ignore condition))
+                (error failure-error)))
+             nil)
+         (simple-error (condition) (eq condition failure-error)))
+       :to-be-truthy))))
