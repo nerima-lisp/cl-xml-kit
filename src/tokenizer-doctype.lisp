@@ -82,7 +82,7 @@ Brackets inside quoted literals do not count toward the subset nesting."
 (defun %xml-tokenizer-scan-doctype (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (%xml-tokenizer-consume-literal tokenizer "<!DOCTYPE")
     (let ((start (%xml-tokenizer-state-index state))
           (subset-depth 0)
@@ -113,7 +113,6 @@ Brackets inside quoted literals do not count toward the subset nesting."
                (%xml-tokenizer-validate-doctype-body tokenizer
                                                       (subseq input start end))
                (%xml-tokenizer-advance tokenizer)
-               (setf (%xml-tokenizer-state-mode state) :content)
                (return (%xml-tokenizer-token tokenizer :doctype
                                              (subseq input start end) position))))
             (t (%xml-tokenizer-advance tokenizer))))))))

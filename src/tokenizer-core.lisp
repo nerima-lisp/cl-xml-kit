@@ -40,13 +40,15 @@ supplied, is the exclusive normalized offset after the lexeme."
   (%make-xml-token kind (and value (copy-seq value)) position end))
 
 (defstruct (%xml-tokenizer-state
-            (:constructor %make-xml-tokenizer-state (index line column mode eof-returned))
+            (:constructor %make-xml-tokenizer-state
+                (index line line-start-index tag-open-p eof-returned space-seen-p))
             (:copier nil))
   (index 0)
   (line 1)
-  (column 1)
-  (mode :content)
-  (eof-returned nil))
+  (line-start-index 0)
+  (tag-open-p nil)
+  (eof-returned nil)
+  (space-seen-p nil))
 
 (defstruct (xml-tokenizer
             (:constructor %make-xml-tokenizer (input source limits))
@@ -62,7 +64,8 @@ advances only the private cursor."
   (input "" :read-only t)
   (source nil :read-only t)
   (limits nil :read-only t)
-  (state (%make-xml-tokenizer-state 0 1 1 :content nil)))
+  (state (%make-xml-tokenizer-state 0 1 0 nil nil nil))
+  (cursor nil))
 
 (defun xml-tokenizer-p (value)
   "Return true when VALUE is an XML tokenizer."
@@ -82,7 +85,11 @@ cursor, so repeated calls consume the input in order."
   (check-argument limits xml-resource-limits-p xml-input-error
                   :label-must-be-resource-limits
                   :format-arguments ("TOKENIZER LIMITS"))
-  (%make-xml-tokenizer (copy-seq input) (and source (copy-seq source)) limits))
+  (let ((tokenizer (%make-xml-tokenizer
+                    (copy-seq input) (and source (copy-seq source)) limits)))
+    (setf (%xml-tokenizer-cursor tokenizer)
+          (%xml-tokenizer-create-cursor tokenizer))
+    tokenizer))
 
 (defun xml-tokenizer-input (tokenizer)
   "Return a fresh copy of the tokenizer's normalized input."
@@ -97,7 +104,8 @@ cursor, so repeated calls consume the input in order."
     (make-xml-position :source (%xml-tokenizer-source tokenizer)
                        :offset (%xml-tokenizer-state-index state)
                        :line (%xml-tokenizer-state-line state)
-                       :column (%xml-tokenizer-state-column state))))
+                       :column (1+ (- (%xml-tokenizer-state-index state)
+                                      (%xml-tokenizer-state-line-start-index state))))))
 
 (defun %xml-tokenizer-fail (tokenizer message &key constraint expected)
   (error 'xml-well-formedness-error
@@ -107,10 +115,13 @@ cursor, so repeated calls consume the input in order."
          :constraint constraint
          :expected expected))
 
-(defun %xml-tokenizer-limit-fail (tokenizer kind value limit)
+(defun %xml-tokenizer-limit-fail (tokenizer kind value limit
+                                      &optional
+                                        (position
+                                          (%xml-tokenizer-current-position tokenizer)))
   (error 'xml-resource-limit-exceeded
          :message (xml-message :resource-limit-exceeded-values kind value limit)
-         :position (%xml-tokenizer-current-position tokenizer)
+         :position position
          :source (%xml-tokenizer-source tokenizer)
          :kind kind
          :value value
@@ -141,11 +152,10 @@ cursor, so repeated calls consume the input in order."
                            (xml-message :illegal-character (char-code character))
                            :constraint :legal-character))
     (incf (%xml-tokenizer-state-index state))
-    (if (char= character #\Newline)
-        (progn
-          (incf (%xml-tokenizer-state-line state))
-          (setf (%xml-tokenizer-state-column state) 1))
-        (incf (%xml-tokenizer-state-column state)))
+    (when (char= character #\Newline)
+      (incf (%xml-tokenizer-state-line state))
+      (setf (%xml-tokenizer-state-line-start-index state)
+            (%xml-tokenizer-state-index state)))
     character))
 
 (defun %xml-tokenizer-consume-literal (tokenizer literal)
@@ -156,10 +166,9 @@ cursor, so repeated calls consume the input in order."
         while (and character (xml-space-char-p character))
         do (%xml-tokenizer-advance tokenizer)))
 
-(defun %xml-tokenizer-token (tokenizer kind value position)
-  (make-xml-token :kind kind :value value :position position
-                  :end (%xml-tokenizer-state-index
-                        (%xml-tokenizer-state tokenizer))))
+(defun %xml-tokenizer-token (tokenizer kind value start)
+  (values kind value start (%xml-tokenizer-state-index
+           (%xml-tokenizer-state tokenizer))))
 
 (defun %xml-tokenizer-check-name-limit (tokenizer length)
   (let ((limit (xml-resource-limits-max-name-length

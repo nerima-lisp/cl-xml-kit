@@ -93,7 +93,7 @@
              :test #'equal)
             :to-equal '("positions.xml"))))
 
-(describe "name and text-node limits"
+(describe "tokenizer resource limits"
   (it-each (("<long>" (:max-name-length 4) (:start-tag-open :name :tag-close :eof))
             ("abc" (:max-text-node-length 3) (:text :eof))
             ("<![CDATA[abc]]>" (:max-text-node-length 3) (:cdata :eof))
@@ -113,7 +113,8 @@
             ("<![CDATA[abcd]]>" :max-text-node-length 3 4)
             ("&abcd;" :max-name-length 3 4)
             ("<?long?>" :max-name-length 3 4)
-            ("<!DOCTYPE long>" :max-name-length 3 4))
+            ("<!DOCTYPE long>" :max-name-length 3 4)
+            ("abcd" :max-document-characters 3 4))
       "refuses ~S above the ~S limit ~S"
       (input kind limit value)
     (expect (lambda () (drain-tokens input :limits (make-xml-resource-limits kind limit)))
