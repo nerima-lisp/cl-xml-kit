@@ -77,7 +77,8 @@ and a quoted value, then a close, so the token order needs no check here."
 
 (defun %parser-close-empty-element (parser)
   (let ((frame (pop (xml-parser-stack parser))))
-    (decf (xml-parser-depth parser))
+    (when (zerop (decf (xml-parser-depth parser)))
+      (setf (xml-parser-root-closed parser) t))
     (setf (xml-parser-phase parser) :running)
     (%parser-event parser :end-element :name (xml-parser-frame-name frame)
                                        :position (xml-parser-frame-end-position frame))))
@@ -95,8 +96,6 @@ and a quoted value, then a close, so the token order needs no check here."
                            :element-type-match (xml-parser-frame-lexical-name frame)))
     (let ((close (%parser-next-token parser)))
       (pop (xml-parser-stack parser))
-      ;; Only a root with an end tag sets ROOT-CLOSED, so a reference after an
-      ;; empty root is still accepted as document text.
       (when (zerop (decf (xml-parser-depth parser)))
         (setf (xml-parser-root-closed parser) t))
       (%parser-event parser :end-element :name (xml-parser-frame-name frame)
