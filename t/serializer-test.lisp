@@ -23,6 +23,15 @@
       (write-xml (node-from-spec '(:element "a" :children ((:element "b")))) stream
                  :pretty-print t :indent 1)
       (expect (get-output-stream-string stream) :to-equal (format nil "<a>~% <b/>~%</a>"))))
+  (it "uses two-space indentation by default through public APIs"
+    (let* ((node (node-from-spec
+                  (list :element "root"
+                        :children (list (list :element "child")))))
+           (expected (format nil "<root>~%  <child/>~%</root>"))
+           (stream (make-string-output-stream)))
+      (write-xml node stream :pretty-print t)
+      (expect (get-output-stream-string stream) :to-equal expected)
+      (expect (xml->string node :pretty-print t) :to-equal expected)))
 
   (it-each (((:object 1) () "OBJECT is not a serializable XML node." 1)
             ((:object "text") () "OBJECT is not a serializable XML node." "text")
@@ -42,4 +51,31 @@
     (expect (lambda () (write-xml (node-from-spec '(:element "root")) nil))
             :to-signal-xml '(xml-serialization-error
                              (xml-condition-message "STREAM must be a character stream.")
-                             (xml-serialization-error-object nil)))))
+                             (xml-serialization-error-object nil))))
+
+  (describe "internal serializer defaults"
+    (it "initializes both state counters to zero"
+      (let ((state (cl-xml-kit::%make-xml-serializer-state
+                    (make-string-output-stream)
+                    *default-xml-resource-limits* nil 2 nil)))
+        (expect (cl-xml-kit::xml-serializer-state-output-count state)
+                :to-equal 0)
+        (expect (cl-xml-kit::xml-serializer-state-generated-prefix-index state)
+                :to-equal 0)))
+
+    (it "writes compact noncanonical output by default through %write-xml"
+      (let ((stream (make-string-output-stream)))
+        (cl-xml-kit::%write-xml
+         (node-from-spec '(:element "root"
+                           :children ((:comment "note") (:element "child"))))
+         stream :resource-limits *default-xml-resource-limits*)
+        (expect (get-output-stream-string stream)
+                :to-equal "<root><!--note--><child/></root>")))
+
+    (it "uses two-space indentation by default when %write-xml pretty-prints"
+      (let ((stream (make-string-output-stream)))
+        (cl-xml-kit::%write-xml
+         (node-from-spec '(:element "root" :children ((:element "child"))))
+         stream :pretty-print t :resource-limits *default-xml-resource-limits*)
+        (expect (get-output-stream-string stream)
+                :to-equal (format nil "<root>~%  <child/>~%</root>"))))))

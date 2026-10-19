@@ -44,7 +44,16 @@
         "dispatches ~A to its serializer"
         (label spec expected)
       (declare (ignore label))
-      (expect (xml->string (node-from-spec spec)) :to-equal expected)))
+      (expect (xml->string (node-from-spec spec)) :to-equal expected))
+
+    (it "writes document-level non-whitespace text built with public constructors"
+      (let ((document
+              (make-xml-document
+               :children (list (make-xml-text :data "before")
+                               (make-xml-element
+                                :name (make-xml-name :local-name "root"))
+                               (make-xml-text :data "after")))))
+        (expect (xml->string document) :to-equal "before<root/>after"))))
 
   (it "omits comments and writes a processing instruction without data with a space in canonical form"
     (expect (xml->canonical-string (node-from-spec '(:document (:comment "ignored") (:pi "pi"))))

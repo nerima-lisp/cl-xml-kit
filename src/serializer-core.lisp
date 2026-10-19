@@ -4,8 +4,8 @@
 
 (defstruct (xml-serializer-state
             (:constructor %make-xml-serializer-state
-                (stream resource-limits pretty-print indent canonical output-count
-                        generated-prefix-index)))
+                (stream resource-limits pretty-print indent canonical
+                 &optional (output-count 0) (generated-prefix-index 0))))
   stream
   resource-limits
   pretty-print

@@ -11,7 +11,7 @@
 (in-package #:cl-xml-kit)
 
 (defstruct (format-state
-            (:constructor %make-format-state (serializer indent style))
+            (:constructor %make-format-state (serializer &optional (indent 2) (style :lf)))
             (:copier nil))
   "Output state of one FORMAT-XML run.
 

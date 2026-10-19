@@ -210,7 +210,7 @@
               :to-be output))))
 
 (describe "continuation callbacks"
-  (it "uses the default two-space indent and calls success exactly once"
+  (it "uses the default :indent when omitted and calls success exactly once"
     (let ((calls 0)
           (formatted nil))
       (format-xml "<a><b/></a>"
@@ -222,6 +222,13 @@
           (error "Failure must not run for valid XML.")))
       (expect calls :to-equal 1)
       (expect formatted :to-equal (format-lines +format-lf+ "<a>" "  <b/>" "</a>"))))
+  (it "uses format-state constructor defaults"
+    (let* ((stream (make-string-output-stream))
+           (serializer (cl-xml-kit::%serializer-state
+                        stream :indent 2 :resource-limits *default-xml-resource-limits*))
+           (state (cl-xml-kit::%make-format-state serializer)))
+      (expect (cl-xml-kit::format-state-indent state) :to-equal 2)
+      (expect (cl-xml-kit::format-state-style state) :to-equal :lf)))
 
   (it "calls failure exactly once with the parse condition"
     (let ((calls 0)
@@ -236,7 +243,7 @@
       (expect calls :to-equal 1)
       (expect (typep received 'xml-well-formedness-error) :to-be-truthy)))
 
-  (it "rejects external entities under the default policy"
+  (it "rejects external entities when :external-entity-policy is omitted"
     (let ((received nil))
       (format-xml "<!DOCTYPE a SYSTEM \"a.dtd\"><a/>"
         (lambda (output)
