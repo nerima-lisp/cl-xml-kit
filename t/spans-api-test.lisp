@@ -24,40 +24,46 @@
               :to-equal '(1 1 1))))
 
   (it "maps spans back through collapsed CRLF pairs and lone CRs to the original string"
-    (labels ((collapse (string)
-               (with-output-to-string (stream)
-                 (loop with index = 0
-                       while (< index (length string))
-                       do (let ((character (char string index)))
-                            (cond
-                              ((and (char= character #\Return)
-                                    (< (1+ index) (length string))
-                                    (char= (char string (1+ index)) #\Linefeed))
-                               (write-char #\Linefeed stream)
-                               (incf index 2))
-                              ((char= character #\Return)
-                               (write-char #\Linefeed stream)
-                               (incf index))
-                              (t (write-char character stream)
-                                 (incf index)))))))
-             (slices (source)
-               (let ((slices nil))
-                 (labels ((walk (node)
-                            (push (spans-slice source node) slices)
-                            (when (cl-xml-kit::span-element-p node)
-                              (push (spans-start-tag source node) slices)
-                              (push (spans-content source node) slices)
-                              (dolist (attribute (cl-xml-kit::span-element-attributes node))
-                                (push (third (spans-attribute-text source attribute)) slices))
-                              (mapc #'walk (cl-xml-kit::span-element-children node)))))
-                   (mapc #'walk (cl-xml-kit::span-document-children (spans-scan source))))
-                 (nreverse slices))))
-      (let ((expected (slices (spans-fixture-with +spans-lf+))))
-        (expect (length expected) :to-be-greater-than 30)
-        (expect (mapcar #'collapse (slices (spans-fixture-with +spans-crlf+)))
-                :to-equal expected)
-        (expect (mapcar #'collapse (slices (spans-fixture-with +spans-cr+)))
-                :to-equal expected)))))
+  (labels ((collapse (string)
+             (with-output-to-string (stream)
+               (loop with index = 0
+                     while (< index (length string))
+                     do (let ((character (char string index)))
+                          (cond
+                            ((and (char= character #\Return)
+                                  (< (1+ index) (length string))
+                                  (char= (char string (1+ index)) #\Linefeed))
+                             (write-char #\Linefeed stream)
+                             (incf index 2))
+                            ((char= character #\Return)
+                             (write-char #\Linefeed stream)
+                             (incf index))
+                            (t
+                             (write-char character stream)
+                             (incf index)))))))
+           (slices (source)
+             (let ((slices nil))
+               (labels ((walk (node)
+                          (push (spans-slice source node) slices)
+                          (when (cl-xml-kit::span-element-p node)
+                            (push (spans-start-tag source node) slices)
+                            (push (spans-content source node) slices)
+                            (dolist (attribute (cl-xml-kit::span-element-attributes node))
+                              (push (third (spans-attribute-text source attribute)) slices))
+                            (mapc (function walk)
+                                  (cl-xml-kit::span-element-children node)))))
+                 (mapc (function walk)
+                       (cl-xml-kit::span-document-children (spans-scan source))))
+               (nreverse slices))))
+    (let ((expected (slices (spans-fixture-with +spans-lf+))))
+      (expect (length expected) :to-be-greater-than 30)
+      (let ((cl-weave:*snapshot-directory*
+              (asdf:system-relative-pathname "cl-xml-kit/test" "t/__snapshots__/")))
+        (expect expected :to-match-snapshot "spans/fixture-slices"))
+      (expect (mapcar (function collapse) (slices (spans-fixture-with +spans-crlf+)))
+              :to-equal expected)
+      (expect (mapcar (function collapse) (slices (spans-fixture-with +spans-cr+)))
+              :to-equal expected)))))
 
 (it-each (("<a>x</a>" :lf)
           ("<a>{cr}{lf}x</a>" :crlf)
@@ -134,3 +140,94 @@
                              (xml-resource-limit-exceeded-kind :max-name-length)
                              (xml-resource-limit-exceeded-value 3)
                              (xml-resource-limit-exceeded-limit 2)))))
+
+(describe "continuation callbacks"
+  (it "calls only success with the span document"
+    (let ((callback-count 0)
+          (failure-condition nil))
+      (let ((qname
+              (cl-weave:with-continuation-result (result resume)
+                  (cl-xml-kit::scan-xml-spans
+                   "<a/>"
+                   (lambda (document)
+                     (incf callback-count)
+                     (funcall #'resume
+                              (cl-xml-kit::span-element-qname
+                               (cl-xml-kit::span-document-root document))))
+                   (lambda (condition)
+                     (incf callback-count)
+                     (setf failure-condition condition)))
+                result)))
+        (expect callback-count :to-equal 1)
+        (expect failure-condition :to-equal nil)
+        (expect qname :to-equal "a"))))
+
+  (it "calls only failure with the original parse condition"
+    (let ((callback-count 0)
+          (success-document :not-called)
+          (received-condition nil))
+      (let ((condition
+              (cl-weave:with-continuation-result (condition resume)
+                  (cl-xml-kit::scan-xml-spans
+                   "<a></b>"
+                   (lambda (document)
+                     (incf callback-count)
+                     (setf success-document document))
+                   (lambda (condition)
+                     (incf callback-count)
+                     (setf received-condition condition)
+                     (funcall #'resume condition)))
+                condition)))
+        (expect callback-count :to-equal 1)
+        (expect success-document :to-equal :not-called)
+        (expect (eq condition received-condition) :to-be-truthy)
+        (expect (typep received-condition
+                       (find-class (quote xml-well-formedness-error)))
+                :to-be-truthy)
+        (expect (xml-well-formedness-error-constraint received-condition)
+                :to-equal :element-type-match)
+        (expect (xml-well-formedness-error-expected received-condition)
+                :to-equal "a"))))
+
+  (it "does not route success callback errors into the scan failure callback"
+    (let ((success-calls 0)
+          (failure-calls 0)
+          (caught-condition nil))
+      (handler-case
+          (cl-xml-kit::scan-xml-spans
+           "<a/>"
+           (lambda (document)
+             (declare (ignore document))
+             (incf success-calls)
+             (error "success callback failure"))
+           (lambda (condition)
+             (declare (ignore condition))
+             (incf failure-calls)))
+        (simple-error (condition)
+          (setf caught-condition condition)))
+      (expect success-calls :to-equal 1)
+      (expect failure-calls :to-equal 0)
+      (expect (typep caught-condition (find-class (quote simple-error)))
+              :to-be-truthy)))
+  (it "propagates errors signalled by the scan failure callback"
+    (let ((failure-calls 0)
+          (failure-error
+            (handler-case
+                (error "failure callback")
+              (simple-error (condition) condition))))
+      (expect
+       (handler-case
+           (progn
+             (cl-xml-kit::scan-xml-spans
+              "<a>"
+              (lambda (document)
+                (declare (ignore document))
+                (error "Success must not run for malformed XML."))
+              (lambda (condition)
+                (declare (ignore condition))
+                (incf failure-calls)
+                (error failure-error)))
+             nil)
+         (simple-error (condition) (eq condition failure-error)))
+       :to-be-truthy)
+      (expect failure-calls :to-equal 1))))

@@ -56,7 +56,10 @@
       lispDependencies = ctx: [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
       lispCheckDependencies = ctx: [ cl-weave.packages.${ctx.system}.cl-weave ];
 
-      sourceInclude = [ ./scripts/xmlconf-exclusions.sexp ];
+      sourceInclude = [
+        ./scripts/xmlconf-exclusions.sexp
+        ./t/__snapshots__/snapshots.sexp
+      ];
 
       extraOutputs =
         ctx:

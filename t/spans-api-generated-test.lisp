@@ -6,7 +6,7 @@
 (in-package #:cl-xml-kit/test)
 
 (it "generates enough accepted mutations to exercise the scanner"
-  (expect (length (spans-generated-documents)) :to-be-greater-than-or-equal 150))
+  (expect (length (spans-generated-documents)) :to-be-greater-than-or-equal 200))
 
 (it "keeps every span of the fixture and the generated documents consistent"
   (expect (loop for source in (cons +spans-fixture+ (spans-generated-documents))
@@ -37,3 +37,18 @@
     (destructuring-bind (spans dom) (spans-agreement source)
       (expect spans :to-equal dom))
     (expect (spans-shift-problems source) :to-equal nil)))
+
+(it-fuzz "calls exactly one scanner callback for markup-like inputs"
+    ((source (gen-string :max-length 40 :alphabet "<>/!?&;#:= abcXYZ")))
+    (:trials 300)
+  (let ((callback-count 0))
+    (cl-xml-kit::scan-xml-spans
+     source
+     (lambda (document)
+       (incf callback-count)
+       (expect (cl-xml-kit::span-document-root document) :to-be-truthy))
+     (lambda (condition)
+       (incf callback-count)
+       (expect (typep condition (find-class (quote condition)))
+               :to-be-truthy)))
+    (expect callback-count :to-equal 1)))

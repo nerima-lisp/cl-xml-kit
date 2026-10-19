@@ -17,7 +17,7 @@
   (it-each (("/r/b") ("/r/*") ("/r/s") ("/r/s/c"))
       "refuses to enumerate the children of the root for ~S, which references a markup entity"
       (path)
-    (expect (lambda () (select-xml +path-entity-document+ path))
+    (expect (lambda () (path-select +path-entity-document+ path))
             :to-signal-xml (list 'xml-unsupported-edit
                                  '(xml-edit-error-reason :entity-reference)
                                  (list 'xml-edit-error-path path)
@@ -38,7 +38,7 @@
   (it "refuses only the step below the nested element that references a markup entity"
     (expect (path-summaries +path-nested-entity-document+ "/r/u")
             :to-equal '((:element "/r[1]/u[1]")))
-    (expect (lambda () (select-xml +path-nested-entity-document+ "/r/u/*"))
+    (expect (lambda () (path-select +path-nested-entity-document+ "/r/u/*"))
             :to-signal-xml '(xml-unsupported-edit
                              (xml-edit-error-reason :entity-reference)
                              (xml-edit-error-path "/r/u/*")))))
@@ -48,18 +48,18 @@
             (42 "/a" "SOURCE must be a string."))
       "rejects the source ~S and path ~S with an input error saying ~S"
       (source path message)
-    (expect (lambda () (select-xml source path))
+    (expect (lambda () (path-select source path))
             :to-signal-xml (list 'xml-input-error (list 'xml-condition-message message))))
 
   (it "signals the parse condition for a source that is not well-formed"
-    (expect (lambda () (select-xml "<a>" "/a"))
+    (expect (lambda () (path-select "<a>" "/a"))
             :to-signal-xml '(xml-well-formedness-error
                              (xml-well-formedness-error-constraint :well-formedness)
                              (xml-well-formedness-error-expected :end-tag))))
 
   (it "applies the caller's resource limits"
     (expect (lambda ()
-              (select-xml "<a><b/></a>" "/a"
+              (path-select "<a><b/></a>" "/a"
                           :resource-limits (make-xml-resource-limits :max-depth 1)))
             :to-signal-xml '(xml-resource-limit-exceeded
                              (xml-resource-limit-exceeded-kind :max-depth)
@@ -67,7 +67,7 @@
 
   (it "applies the caller's external entity policy"
     (let ((source "<!DOCTYPE a SYSTEM \"a.dtd\"><a/>"))
-      (expect (lambda () (select-xml source "/a"))
+      (expect (lambda () (path-select source "/a"))
               :to-signal-xml '(xml-external-resource-disabled
                                (xml-external-resource-disabled-kind :external-dtd)))
       (expect (path-summaries source "/a" :external-entity-policy :skip)

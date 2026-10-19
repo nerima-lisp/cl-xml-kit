@@ -33,7 +33,7 @@
           ("/a/text()x" 9 "the end of the path"))
     "reports the path ~S as malformed at index ~D, expecting ~A"
     (path index expectation)
-  (expect (lambda () (select-xml "<a/>" path))
+  (expect (lambda () (path-select "<a/>" path))
           :to-signal-xml (list 'xml-path-error
                                (list 'xml-edit-error-reason :syntax)
                                (list 'xml-path-error-index index)
@@ -44,7 +44,7 @@
 
 (it "rejects a non-ASCII digit as a position"
   (let ((path (format nil "/a[~C]" (code-char #x661))))
-    (expect (lambda () (select-xml "<a/>" path))
+    (expect (lambda () (path-select "<a/>" path))
             :to-signal-xml (list 'xml-path-error
                                  '(xml-edit-error-reason :syntax)
                                  '(xml-path-error-index 3)
@@ -55,13 +55,13 @@
           ("/a/b/text()"))
     "accepts the path form ~S"
     (path)
-  (finishes (select-xml "<a/>" path)))
+  (finishes (path-select "<a/>" path)))
 
 (it-property "resolves the canonical path of every match of a generated path back to that match"
     ((document (corpus-gen-document))
      (path (path-gen-path)))
   (let ((source (corpus-render document)))
-    (expect (loop for match in (select-xml source path)
+    (expect (loop for match in (path-select source path)
                   unless (equal (path-match-identities source (xml-match-path match))
                                 (list (path-match-identity match)))
                     collect (xml-match-path match))
