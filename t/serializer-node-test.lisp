@@ -61,6 +61,10 @@
     (expect (xml->string (node-from-spec '(:document " " (:element "root"))))
             :to-equal " <root/>"))
 
+  (it "writes an empty document as an empty string"
+    (expect (xml->string (node-from-spec '(:document)))
+            :to-equal ""))
+
   (it "writes an attribute node as a name, an equals sign, and a quoted value"
     (expect (xml->string (node-from-spec '(:attribute "id" "a<b" :uri "urn:x" :prefix "p")))
             :to-equal "p:id=\"a&lt;b\"")))
