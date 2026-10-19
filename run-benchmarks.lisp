@@ -6,6 +6,7 @@
 
 (cl-xml-kit/script-support:load-project-definition)
 
+(asdf:load-system "cl-weave")
 (asdf:load-system "cl-xml-kit/benchmark")
 
 (uiop:symbol-call "CL-XML-KIT/BENCHMARK" "MAIN")

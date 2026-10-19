@@ -1,60 +1,54 @@
-# cl-xml-kit benchmark and release checks
+# cl-xml-kit benchmark and verification checks
 
-`benchmark/run.lisp` measures string and UTF-8 parsing, DOM construction,
-pull-event iteration, and serialization. Each selected case is parsed and
-validated before timing begins. Missing public entry points raise a benchmark
-API error and cannot be reported as a zero result.
+The benchmark measures string parsing, UTF-8 parsing, pull-event iteration, and
+serialization. It validates every selected case before timing and checks each
+measured result afterward. The benchmark uses `cl-weave:measure` for timing.
 
 ## Running the benchmark
 
 From the repository root:
 
 ```sh
-sbcl --noinform --disable-debugger --script run-benchmarks.lisp \
-  > benchmark-results.tsv
+nix run .#bench
 ```
 
-The bootstrap loads the `cl-xml-kit/benchmark` ASDF system, so ASDF must be
-able to find the runtime dependency `cl-codec-kit`. A load failure stops the
-run.
+The benchmark ASDF system depends on `cl-xml-kit`, `cl-weave`, and
+`cl-host-kit`; `cl-xml-kit` depends on `cl-codec-kit`. The flake supplies these
+dependencies for the command above.
 
-`nix run .#bench` runs the same harness with the dependencies supplied by the
-flake.
-
-The controls are deterministic and reject values below the release standard:
+The controls are deterministic and enforce the minimum sample counts used for
+release measurements:
 
 | Variable | Default | Constraint |
 | --- | ---: | --- |
 | `BENCH_SEED` | `20261007` | decimal integer, at least 0 |
 | `BENCH_WARMUP` | `2` | integer, at least 2 |
 | `BENCH_SAMPLES` | `10` | integer, at least 10 |
-| `BENCH_OPERATIONS` | `all` | comma-separated `parse`, `utf8-parse`, `dom`, `pull`, `serialize`, or `all` |
+| `BENCH_OPERATIONS` | `all` | comma-separated `parse`, `utf8-parse`, `pull`, `serialize`, or `all` |
 | `BENCH_WORKLOADS` | `all` | comma-separated workload IDs or `all` |
-| `BENCH_REVISION` | `unknown` | source revision recorded in the metadata |
-| `BENCH_SOURCE_STATE` | `unknown` | `clean`, `dirty`, or `unknown` |
 
-The harness records only the revision and working-tree state its caller
-passes. `nix run .#bench` sets both from the flake: a clean Git checkout gives
-its commit and `clean`, a modified one gives its commit and `dirty`, and a
-`path:` flake or a tree without `.git` gives `unknown` for both. For a manual
-run, set them yourself, for example
-`BENCH_REVISION="$(jj log --no-graph -r @- -T commit_id)" BENCH_SOURCE_STATE=clean`
-when the working-copy change `@` is empty.
+For a quick parser smoke run, select the small workload and the string parser:
 
-Workloads are `small`, `text-1mib`, `deep-512`, `attributes-128`,
-`namespaces`, and `mixed-content`. The seed is included in generated payloads
-and every shuffled round. Full GC occurs before, and never inside, a timed
-section. Allocation is recorded with `sb-ext:get-bytes-consed`.
+```sh
+BENCH_OPERATIONS=parse BENCH_WORKLOADS=small nix run .#bench
+```
 
-The TSV contains metadata, round order, and result rows. Result rows include
-input bytes, sample count, median/minimum/maximum wall time, and allocation
-bytes. Metadata includes the source revision and state, runtime, selection,
-and MD5 digests of the benchmark sources.
+Workloads are `small`, `text-1mib`, `deep-512`, `attributes-128`, `namespaces`,
+and `mixed-content`. UTF-8 parsing is measured only for `small`; pull-event
+iteration is measured only for `mixed-content`. The seed changes the `small`,
+`text-1mib`, `attributes-128`, and `mixed-content` payloads and controls shuffled
+case order. The `deep-512` and `namespaces` payloads are fixed. A full garbage
+collection runs before each measured sample, outside the timed section.
+Allocation is recorded with `sb-ext:get-bytes-consed`.
+
+Output is plain text: one key-value summary followed by one key-value record per
+sample. Each sample includes the case, operation, workload, input size, time in
+milliseconds, and allocation bytes.
 
 ## XMLConf
 
 The `xmlconf` flake check runs every selected case and compares the catalog
-counts and the execution totals (passed, failed, and skipped cases) with fixed
+counts and execution totals (passed, failed, and skipped cases) with fixed
 values in `flake.nix`. To inspect a downloaded XMLConf tree directly:
 
 ```sh
@@ -76,26 +70,29 @@ reported as failed. An unknown option is a usage error (exit status 2);
 
 ## Coverage and mutation
 
-Coverage is an explicit release check:
+`nix flake check` includes the expression and branch coverage gate. The check
+uses `cl-weave` coverage statistics and writes native coverage data to
+`coverage.dat` and an HTML report to `coverage-report/`. It enforces the
+measured minimums configured in `scripts/run-coverage.lisp`. The form-level
+exclusion manifest is `scripts/coverage-exclusions.sexp`; each uncovered form
+must have one entry with a non-empty reason, and entries for forms that are no
+longer uncovered fail the check.
+
+The mutation runner uses `cl-weave:run-mutations` with its default operators on
+the character-class predicates and `xml-digit-weight`. Its fixed targets are
+`xml-char-p`, `xml-space-char-p`, `xml-name-start-char-p`, `xml-name-char-p`,
+`xml-pubid-char-p`, `xml-ncname-start-char-p`, `xml-ncname-char-p`,
+`xml-space-p`, `xml-ncname-p`, and `xml-digit-weight`. It runs the existing
+focused tests for each function. Before mutation, it expands loop forms and
+rewrites the two value-discarded `NIL` branches from `LOOP ALWAYS`; flipping
+either branch is behaviorally equivalent. A complete focused run with a failed
+or errored test kills that mutant; an incomplete run, a surviving mutant, or a
+mutation runner error fails the gate. Run it from the repository root with
+dependencies available to ASDF:
 
 ```sh
-sbcl --noinform --disable-debugger --script scripts/run-coverage.lisp
-```
-
-It requires non-empty source and test components, runs the same test system as
-`run-tests.lisp`, writes LCOV output, and requires at least 90 percent
-expression and branch coverage.
-
-Mutation checking requires either `MUTATION_RESULTS` naming an existing result
-file, which takes precedence, or `MUTATION_RUNNER`. The script kills
-`MUTATION_RUNNER` and fails when it runs longer than `MUTATION_RUNNER_TIMEOUT`
-seconds (default 3600):
-
-```sh
-MUTATION_SELECTOR=xml-grammar,serializer-escape \
-MUTATION_RUNNER=/path/to/mutation-runner \
 sbcl --noinform --disable-debugger --script scripts/run-mutation.lisp
 ```
 
-These scripts produce reports and do not modify source, test, ASDF, Nix, or
-CI files.
+The runner prints the total, killed, surviving, and errored mutant counts and
+writes the native S-expression report to `mutation-results.sexp`.

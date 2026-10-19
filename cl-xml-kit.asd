@@ -162,7 +162,7 @@
   :homepage "https://github.com/nerima-lisp/cl-xml-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-xml-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-xml-kit.git")
-  :depends-on ("cl-xml-kit" (:require "sb-md5"))
+  :depends-on ("cl-xml-kit" "cl-weave" "cl-host-kit")
   :pathname "benchmark"
   :serial t
   :components ((:file "package")

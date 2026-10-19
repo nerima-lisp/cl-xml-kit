@@ -4,11 +4,6 @@
 
 (in-package #:cl-xml-kit/benchmark)
 
-;; *LOAD-TRUENAME* names the FASL cache when ASDF loads this file, so the
-;; source root comes from the system definition.
-(defparameter *benchmark-root*
-  (asdf:system-source-directory "cl-xml-kit/benchmark"))
-
 (defconstant +mib+ (* 1024 1024))
 (defconstant +max-pull-events+ 1000000)
 
@@ -26,7 +21,7 @@
   (parse-integer text))
 
 (defun setting-integer (name fallback minimum)
-  (let ((text (uiop:getenv name)))
+  (let ((text (host-kit:getenv name)))
     (let ((value (if text
                      (parse-nonnegative-integer name text)
                      fallback)))
@@ -94,7 +89,7 @@
     octets))
 
 (defun make-text-xml (seed)
-  "Return a document whose text node is +MIB+ characters, the default limit."
+  "Return XML whose text node contains exactly +MIB+ characters."
   (let ((token (format nil "seed-~D" (mod seed 1000000))))
     (with-output-to-string (stream)
       (write-string "<root><text>" stream)
@@ -200,8 +195,6 @@
                    (selected-p operation-selection "utf8-parse"))
           (let ((octets (xml->octets (workload-input workload))))
             (push (make-parse-case workload octets "utf8-parse") cases)))
-        (when (selected-p operation-selection "dom")
-          (push (make-parse-case workload (workload-input workload) "dom") cases))
         (when (and (string= (workload-id workload) "mixed-content")
                    (selected-p operation-selection "pull"))
           (push (make-pull-case workload) cases))
@@ -228,150 +221,52 @@
 
 (defun measure-sample (case)
   (sb-ext:gc :full t)
-  (let* ((start-time (get-internal-real-time))
-         (start-bytes (sb-ext:get-bytes-consed))
-         (value (funcall (benchmark-case-thunk case)))
-         (end-time (get-internal-real-time))
-         (end-bytes (sb-ext:get-bytes-consed))
-         (ticks (- end-time start-time))
-         (seconds (/ ticks (float internal-time-units-per-second 1d0))))
-    (declare (ignore value))
-    (list :ticks ticks
-          :seconds seconds
-          :allocation-bytes (- end-bytes start-bytes))))
-
-(defun median (numbers)
-  (let ((sorted (sort (copy-seq numbers) #'<)))
-    (if (oddp (length sorted))
-        (elt sorted (floor (length sorted) 2))
-        (/ (+ (elt sorted (1- (floor (length sorted) 2)))
-              (elt sorted (floor (length sorted) 2)))
-           2d0))))
-
-(defun summary (samples key)
-  (let ((numbers (mapcar (lambda (sample) (getf sample key)) samples)))
-    (list :median (median numbers)
-          :min (reduce #'min numbers)
-          :max (reduce #'max numbers))))
-
-(defun tsv-field (value)
-  (let ((text (princ-to-string (or value "unknown"))))
-    (with-output-to-string (stream)
-      (loop for character across text
-            do (case character
-                 (#\Tab (write-string "\\t" stream))
-                 (#\Newline (write-string "\\n" stream))
-                 (#\Return (write-string "\\r" stream))
-                 (#\\ (write-string "\\\\" stream))
-                 (t (write-char character stream)))))))
-
-(defun emit-fields (fields)
-  (loop for field in fields
-        for first = t then nil
-        do (unless first (write-char #\Tab))
-           (write-string (tsv-field field)))
-  (terpri))
-
-(defun source-value (relative-path)
-  "Return the hexadecimal MD5 digest of RELATIVE-PATH, or unknown when the
-file is absent."
-  (let ((path (merge-pathnames relative-path *benchmark-root*)))
-    (if (probe-file path)
-        (format nil "~(~{~2,'0X~}~)" (coerce (sb-md5:md5sum-file path) 'list))
-        "unknown")))
-
-(defun source-revision ()
-  "Return the revision the caller passed in BENCH_REVISION, or unknown."
-  (let ((revision (string-trim '(#\Space #\Tab) (or (uiop:getenv "BENCH_REVISION") ""))))
-    (if (plusp (length revision)) revision "unknown")))
-
-(defun source-state ()
-  "Return the working-tree state the caller passed in BENCH_SOURCE_STATE."
-  (let ((state (or (uiop:getenv "BENCH_SOURCE_STATE") "unknown")))
-    (unless (member state '("clean" "dirty" "unknown") :test #'string=)
-      (error "BENCH_SOURCE_STATE must be clean, dirty, or unknown, got ~S" state))
-    state))
-
-(defun metadata (seed operations workloads warmups samples revision state)
-  (list (list "schema" "cl-xml-kit-benchmark")
-        (list "schema_version" "2")
-        (list "source_root" (namestring *benchmark-root*))
-        (list "revision" revision)
-        (list "source_state" state)
-        (list "sbcl" (lisp-implementation-version))
-        (list "lisp_implementation" (lisp-implementation-type))
-        (list "host" (machine-instance))
-        (list "machine" (machine-type))
-        (list "os" (software-type))
-        (list "os_version" (software-version))
-        (list "seed" seed)
-        (list "operations" (format nil "~{~A~^,~}" operations))
-        (list "workloads" (format nil "~{~A~^,~}" workloads))
-        (list "warmup_rounds" warmups)
-        (list "sample_rounds" samples)
-        (list "timer_units_per_second" internal-time-units-per-second)
-        (list "allocation_counter" "sb-ext:get-bytes-consed")
-        (list "hash_algorithm" "md5")
-        (list "hash_benchmark_package" (source-value "benchmark/package.lisp"))
-        (list "hash_benchmark_run" (source-value "benchmark/run.lisp"))
-        (list "hash_benchmark_readme" (source-value "benchmark/README.md"))))
-
-(defun emit-report (cases sample-table orders metadata-rows)
-  (emit-fields '("record" "key" "value"))
-  (dolist (row metadata-rows) (emit-fields (list "meta" (first row) (second row))))
-  (emit-fields '("record" "phase" "round" "round_seed" "case_count" "case_ids"))
-  (dolist (order orders)
-    (emit-fields (list "order" (getf order :phase) (getf order :round)
-                       (getf order :seed) (length (getf order :ids))
-                       (format nil "~{~A~^,~}" (getf order :ids)))))
-  (emit-fields '("record" "case_id" "operation" "workload" "samples"
-                 "input_bytes" "wall_seconds_median" "wall_seconds_min"
-                 "wall_seconds_max" "allocation_bytes_median"
-                 "allocation_bytes_min" "allocation_bytes_max"))
-  (dolist (case cases)
-    (let* ((samples (gethash case sample-table))
-           (time (summary samples :seconds))
-           (allocation (summary samples :allocation-bytes)))
-      (emit-fields
-       (list "result" (benchmark-case-id case) (benchmark-case-operation case)
-             (benchmark-case-workload case) (length samples)
-             (benchmark-case-input-bytes case)
-             (getf time :median) (getf time :min) (getf time :max)
-             (getf allocation :median) (getf allocation :min)
-             (getf allocation :max))))))
+  (let* ((allocation-bytes nil)
+        (measurement
+          (cl-weave:measure
+           (lambda ()
+             (let ((start-bytes (sb-ext:get-bytes-consed)))
+               (prog1 (funcall (benchmark-case-thunk case))
+                 (setf allocation-bytes
+                       (- (sb-ext:get-bytes-consed) start-bytes)))))
+           :samples 1
+           :iterations 1)))
+    (unless (integerp allocation-bytes)
+      (error "Benchmark case ~A did not record an allocation sample"
+             (benchmark-case-id case)))
+    (values measurement allocation-bytes)))
 
 (defun main ()
-  "Run correctness preflight, warmups, and reproducible benchmark samples."
   (let* ((seed (setting-integer "BENCH_SEED" 20261007 0))
          (warmups (setting-integer "BENCH_WARMUP" 2 2))
          (samples (setting-integer "BENCH_SAMPLES" 10 10))
-         (revision (source-revision))
-         (state (source-state))
          (operations (split-selection "BENCH_OPERATIONS"
-                                      (or (uiop:getenv "BENCH_OPERATIONS") "all")))
-         (workload-selection (split-selection "BENCH_WORKLOADS"
-                                              (or (uiop:getenv "BENCH_WORKLOADS") "all")))
+                                      (or (host-kit:getenv "BENCH_OPERATIONS") "all")))
+         (workload-selection
+           (split-selection "BENCH_WORKLOADS"
+                            (or (host-kit:getenv "BENCH_WORKLOADS") "all")))
          (cases (make-cases seed operations workload-selection))
-         (random-state (make-rng seed))
-         (sample-table (make-hash-table :test #'eq))
-         (orders nil))
+         (random-state (make-rng seed)))
     (validate-cases cases)
-    (format *error-output* "benchmark preflight passed: cases=~D seed=~D~%"
-            (length cases) seed)
-    (labels ((run-round (phase round measure-p)
-               (let* ((round-seed (rng-state random-state))
-                      (ordered (shuffle-cases (coerce cases 'vector) random-state)))
-                 (push (list :phase phase :round round :seed round-seed
-                             :ids (map 'list #'benchmark-case-id ordered))
-                       orders)
-                 (loop for case across ordered
-                       do (if measure-p
-                              (push (measure-sample case) (gethash case sample-table))
-                              (funcall (benchmark-case-thunk case)))))))
-      (dotimes (round warmups) (run-round "warmup" round nil))
-      (dotimes (round samples) (run-round "sample" round t)))
-    (emit-report cases sample-table (nreverse orders)
-                 (metadata seed operations workload-selection warmups samples
-                           revision state))
+    (format t "cl-xml-kit benchmark~%seed=~D warmups=~D samples=~D cases=~D~%"
+            seed warmups samples (length cases))
+    (dotimes (round warmups)
+      (loop for case across (shuffle-cases (coerce cases 'vector) random-state)
+            do (funcall (benchmark-case-thunk case))))
+    (dotimes (round samples)
+      (loop for case across (shuffle-cases (coerce cases 'vector) random-state)
+            do (multiple-value-bind (measurement allocation-bytes)
+                   (measure-sample case)
+                 (unless (funcall (benchmark-case-validator case))
+                   (error "Correctness check failed after sample for ~A"
+                          (benchmark-case-id case)))
+                 (format t "case=~A operation=~A workload=~A input-bytes=~D sample=~D time-ms=~,3F allocation-bytes=~D~%"
+                         (benchmark-case-id case)
+                         (benchmark-case-operation case)
+                         (benchmark-case-workload case)
+                         (benchmark-case-input-bytes case)
+                         round
+                         (cl-weave:median-ms measurement)
+                         allocation-bytes))))
     t))
 
