@@ -17,6 +17,15 @@
                           (:start-element "b" nil) (:end-element "b" nil)))
       (expect (xml-parser-eof-p parser) :to-equal nil)))
 
+  (it "snapshots a mixed prolog and element event sequence"
+    (let ((events (mapcar (function xml-event-type)
+                          (pull-events
+                           "<!--b--><?p d?><!DOCTYPE r><r>a<![CDATA[x]]><x/>b</r><!--e-->"))))
+      (let ((cl-weave:*snapshot-directory*
+              (asdf:system-relative-pathname
+               "cl-xml-kit/test" "t/__snapshots__/")))
+        (expect events :to-match-snapshot-sequence "parser/mixed-content"))))
+
   (it "keeps a parser fatal after malformed input"
     (let ((parser (make-xml-parser "<r>")))
       (expect (lambda () (loop while (next-xml-event parser)))
