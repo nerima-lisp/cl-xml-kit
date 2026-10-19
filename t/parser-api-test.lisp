@@ -54,7 +54,24 @@
     (expect (lambda () (parse-xml "<r>" :source-name "in.xml"))
             :to-signal-xml '(xml-well-formedness-error
                              (xml-condition-source "in.xml")
-                             (condition-offset 3)))))
+                             (condition-offset 3))))
+  (it "uses default limits and rejects external DTDs when options are omitted"
+    (let ((*default-xml-resource-limits*
+            (make-xml-resource-limits :max-elements 1)))
+      (let ((parser (make-xml-parser "<a><b/></a>")))
+        (expect (lambda () (loop while (next-xml-event parser)))
+                :to-signal-xml
+                (quote (xml-resource-limit-exceeded
+                        (xml-resource-limit-exceeded-kind :max-elements)
+                        (xml-resource-limit-exceeded-value 2)
+                        (xml-resource-limit-exceeded-limit 1)
+                        (xml-condition-source nil)))))
+      (let ((parser (make-xml-parser "<!DOCTYPE r SYSTEM \"remote.dtd\"><r/>")))
+        (expect (lambda () (loop while (next-xml-event parser)))
+                :to-signal-xml
+                (quote (xml-external-resource-disabled
+                        (xml-external-resource-disabled-kind :external-dtd)
+                        (xml-condition-source nil))))))))
 
 (describe "event mapping"
   (it "maps the same events as the pull reader and returns nil"

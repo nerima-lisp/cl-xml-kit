@@ -201,3 +201,21 @@
                                       (document-element "<a>ab&amp;<!---->cd&amp;</a>"
                                                         :resource-limits limits))))
               :to-equal '("ab&" "cd&")))))
+(describe "parser state defaults"
+  (it "starts with its generated slot defaults"
+    (let ((parser (make-xml-parser "<r/>")))
+      (expect
+       (list (cl-xml-kit::xml-parser-tokenizer-stack parser)
+             (cl-xml-kit::xml-parser-phase parser)
+             (cl-xml-kit::xml-parser-stack parser)
+             (cl-xml-kit::xml-parser-depth parser)
+             (cl-xml-kit::xml-parser-fatal parser)
+             (cl-xml-kit::xml-parser-root-seen parser)
+             (cl-xml-kit::xml-parser-root-closed parser)
+             (cl-xml-kit::xml-parser-doctype-root parser)
+             (cl-xml-kit::xml-parser-doctype-seen parser)
+             (cl-xml-kit::xml-parser-element-count parser)
+             (cl-xml-kit::xml-parser-text-length parser)
+             (cl-xml-kit::xml-parser-token-observer parser)
+             (cl-xml-kit::xml-parser-entity-skips parser))
+       :to-equal (quote (nil :start nil 0 nil nil nil nil nil 0 0 nil nil))))))

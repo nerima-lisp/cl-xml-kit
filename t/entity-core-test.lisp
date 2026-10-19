@@ -71,7 +71,23 @@
       (expect (cl-xml-kit::xml-entity-context-declare context declaration)
               :to-be declaration)
       (expect (cl-xml-kit::expand-xml-entity-references "hello &who;" context)
-              :to-equal "hello world"))))
+              :to-equal "hello world")))
+  (it "rejects a duplicate declaration without replacing the original"
+    (let ((context (cl-xml-kit::make-xml-entity-context))
+          (original (cl-xml-kit::make-xml-entity-declaration
+                     :name "who" :replacement-text "original"))
+          (duplicate (cl-xml-kit::make-xml-entity-declaration
+                      :name "who" :replacement-text "replacement")))
+      (cl-xml-kit::xml-entity-context-declare context original)
+      (expect (lambda ()
+                (cl-xml-kit::xml-entity-context-declare context duplicate))
+              :to-signal-xml
+              (quote (xml-well-formedness-error
+                      (xml-well-formedness-error-constraint :duplicate-entity-declaration)
+                      (xml-well-formedness-error-expected "who")
+                      (xml-condition-message "Duplicate XML entity declaration."))))
+      (expect (cl-xml-kit::expand-xml-entity-references "&who;" context)
+              :to-equal "original"))))
 
 ;; Expected characters follow XML 1.0 Fifth Edition [2] Char and [66] CharRef:
 ;; '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';', naming a Char.

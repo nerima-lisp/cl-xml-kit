@@ -209,6 +209,7 @@ supplied. Starts sit at offset 2 and ends at offset 8 of source nodes.xml."
             ((make-xml-position :column "1") "COLUMN must be a positive integer.")
             ((make-xml-name :local-name "a:b") "LOCAL-NAME must not contain a colon.")
             ((make-xml-name :local-name nil) "LOCAL-NAME must be a string.")
+            ((make-xml-name) "LOCAL-NAME must be a string.")
             ((make-xml-name :local-name "") "LOCAL-NAME must not be empty.")
             ((make-xml-name :local-name "a" :namespace-uri 1) "NAMESPACE-URI must be a string.")
             ((make-xml-name :local-name "a" :prefix 1) "PREFIX must be a string or NIL.")
