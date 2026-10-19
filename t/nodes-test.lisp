@@ -70,15 +70,55 @@ supplied. Starts sit at offset 2 and ends at offset 8 of source nodes.xml."
       (expect (mapcar #'type-of (xml-document-children (getf nodes :document)))
               :to-equal '(xml-doctype xml-element))))
 
-  (it-each ((xml-document-p :document) (xml-element-p :element) (xml-attribute-p :attribute)
-            (xml-text-p :text) (xml-comment-p :comment) (xml-processing-instruction-p :pi)
-            (xml-doctype-p :doctype) (xml-namespace-binding-p :binding))
-      "answers ~S true only for the ~S node"
-      (predicate key)
+  (it-each (
+      (xml-document-p :position nil) (xml-document-p :end-position nil) (xml-document-p :name nil)
+      (xml-document-p :binding nil) (xml-document-p :attribute nil) (xml-document-p :text nil)
+      (xml-document-p :comment nil) (xml-document-p :pi nil) (xml-document-p :doctype nil)
+      (xml-document-p :element nil) (xml-document-p :document t)
+
+      (xml-element-p :position nil) (xml-element-p :end-position nil) (xml-element-p :name nil)
+      (xml-element-p :binding nil) (xml-element-p :attribute nil) (xml-element-p :text nil)
+      (xml-element-p :comment nil) (xml-element-p :pi nil) (xml-element-p :doctype nil)
+      (xml-element-p :element t) (xml-element-p :document nil)
+
+      (xml-attribute-p :position nil) (xml-attribute-p :end-position nil) (xml-attribute-p :name nil)
+      (xml-attribute-p :binding nil) (xml-attribute-p :attribute t) (xml-attribute-p :text nil)
+      (xml-attribute-p :comment nil) (xml-attribute-p :pi nil) (xml-attribute-p :doctype nil)
+      (xml-attribute-p :element nil) (xml-attribute-p :document nil)
+
+      (xml-text-p :position nil) (xml-text-p :end-position nil) (xml-text-p :name nil)
+      (xml-text-p :binding nil) (xml-text-p :attribute nil) (xml-text-p :text t)
+      (xml-text-p :comment nil) (xml-text-p :pi nil) (xml-text-p :doctype nil) (xml-text-p :element nil)
+      (xml-text-p :document nil)
+
+      (xml-comment-p :position nil) (xml-comment-p :end-position nil) (xml-comment-p :name nil)
+      (xml-comment-p :binding nil) (xml-comment-p :attribute nil) (xml-comment-p :text nil)
+      (xml-comment-p :comment t) (xml-comment-p :pi nil) (xml-comment-p :doctype nil)
+      (xml-comment-p :element nil) (xml-comment-p :document nil)
+
+      (xml-processing-instruction-p :position nil) (xml-processing-instruction-p :end-position nil)
+      (xml-processing-instruction-p :name nil) (xml-processing-instruction-p :binding nil)
+      (xml-processing-instruction-p :attribute nil) (xml-processing-instruction-p :text nil)
+      (xml-processing-instruction-p :comment nil) (xml-processing-instruction-p :pi t)
+      (xml-processing-instruction-p :doctype nil) (xml-processing-instruction-p :element nil)
+      (xml-processing-instruction-p :document nil)
+
+      (xml-doctype-p :position nil) (xml-doctype-p :end-position nil) (xml-doctype-p :name nil)
+      (xml-doctype-p :binding nil) (xml-doctype-p :attribute nil) (xml-doctype-p :text nil)
+      (xml-doctype-p :comment nil) (xml-doctype-p :pi nil) (xml-doctype-p :doctype t)
+      (xml-doctype-p :element nil) (xml-doctype-p :document nil)
+
+      (xml-namespace-binding-p :position nil) (xml-namespace-binding-p :end-position nil)
+      (xml-namespace-binding-p :name nil) (xml-namespace-binding-p :binding t)
+      (xml-namespace-binding-p :attribute nil) (xml-namespace-binding-p :text nil)
+      (xml-namespace-binding-p :comment nil) (xml-namespace-binding-p :pi nil)
+      (xml-namespace-binding-p :doctype nil) (xml-namespace-binding-p :element nil)
+      (xml-namespace-binding-p :document nil)
+      )
+      "answers ~S for the ~S sample as ~S"
+      (predicate key expected)
     (let ((nodes (sample-nodes)))
-      (expect (loop for (candidate node) on nodes by #'cddr
-                    when (funcall predicate node) collect candidate)
-              :to-equal (list key)))))
+      (expect (funcall predicate (getf nodes key)) :to-equal expected))))
 
 (describe "defaults"
   (it-each ((make-xml-position () xml-position-source nil)
