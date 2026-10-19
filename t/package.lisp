@@ -6,6 +6,8 @@
    #:it #:it-each #:it-property #:it-fuzz #:it-sequential
    #:expect #:expect-not #:signals #:finishes #:fail #:defmatcher
    #:with-soft-assertions #:run-all
+   #:with-continuation-result #:with-continuation-values
+   #:with-snapshot-updates #:*snapshot-directory* #:*snapshot-file-name*
    #:gen-boolean #:gen-character #:gen-integer #:gen-list #:gen-map
    #:gen-member #:gen-one-of #:gen-recursive #:gen-string #:gen-tuple
    #:gen-vector
