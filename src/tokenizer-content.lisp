@@ -6,7 +6,7 @@
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
          (start (%xml-tokenizer-state-index state))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (let ((character (%xml-tokenizer-peek tokenizer)))
       (unless (and character (xml-name-start-char-p character))
         (%xml-tokenizer-fail tokenizer (xml-message :expected-name) :expected :name)))
@@ -51,7 +51,7 @@
 (defun %xml-tokenizer-scan-entity (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (%xml-tokenizer-advance tokenizer)
     (let ((start (%xml-tokenizer-state-index state)))
       (loop for character = (%xml-tokenizer-peek tokenizer)
@@ -68,7 +68,7 @@
 (defun %xml-tokenizer-scan-quoted-value (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer)))
          (quote (char input (%xml-tokenizer-state-index state))))
     (%xml-tokenizer-advance tokenizer)
     (let ((start (%xml-tokenizer-state-index state)))
@@ -93,7 +93,7 @@
 (defun %xml-tokenizer-scan-text (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer)))
          (start (%xml-tokenizer-state-index state)))
     (loop for character = (%xml-tokenizer-peek tokenizer)
           while (and character (char/= character #\<) (char/= character #\&))
@@ -108,7 +108,7 @@
 (defun %xml-tokenizer-scan-comment (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (%xml-tokenizer-consume-literal tokenizer "<!--")
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
@@ -119,7 +119,6 @@
           ((%xml-tokenizer-starts-with-p tokenizer "-->")
            (let ((end (%xml-tokenizer-state-index state)))
              (%xml-tokenizer-consume-literal tokenizer "-->")
-             (setf (%xml-tokenizer-state-mode state) :content)
              (return (%xml-tokenizer-token tokenizer :comment
                                            (subseq input start end) position))))
           ((%xml-tokenizer-starts-with-p tokenizer "--")
@@ -130,7 +129,7 @@
 (defun %xml-tokenizer-scan-cdata (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (%xml-tokenizer-consume-literal tokenizer "<![CDATA[")
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
@@ -140,7 +139,6 @@
         (if (%xml-tokenizer-starts-with-p tokenizer "]]>")
             (let ((end (%xml-tokenizer-state-index state)))
               (%xml-tokenizer-consume-literal tokenizer "]]>")
-              (setf (%xml-tokenizer-state-mode state) :content)
               (%xml-tokenizer-check-text-limit tokenizer (- end start))
               (return (%xml-tokenizer-token tokenizer :cdata
                                             (subseq input start end) position)))
@@ -169,7 +167,7 @@
 (defun %xml-tokenizer-scan-processing-instruction (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
          (state (%xml-tokenizer-state tokenizer))
-         (position (%xml-tokenizer-current-position tokenizer)))
+         (position (%xml-tokenizer-state-index (%xml-tokenizer-state tokenizer))))
     (%xml-tokenizer-consume-literal tokenizer "<?")
     (let ((start (%xml-tokenizer-state-index state)))
       (loop
@@ -180,7 +178,28 @@
             (let ((end (%xml-tokenizer-state-index state)))
               (%xml-tokenizer-validate-pi-body tokenizer (subseq input start end))
               (%xml-tokenizer-consume-literal tokenizer "?>")
-              (setf (%xml-tokenizer-state-mode state) :content)
               (return (%xml-tokenizer-token tokenizer :processing-instruction
                                             (subseq input start end) position)))
             (%xml-tokenizer-advance tokenizer))))))
+(defun %xml-tokenizer-special-markup-kind (text index)
+  (when (< (1+ index) (length text))
+    (case (char text (1+ index))
+      (#\? :processing-instruction)
+      (#\!
+       (when (< (+ index 2) (length text))
+         (let* ((marker (char text (+ index 2)))
+                (kind (case marker
+                        (#\- :comment)
+                        (#\[ :cdata)
+                        (#\D :doctype)))
+                (literal (case kind
+                           (:comment "<!--")
+                           (:cdata "<![CDATA[")
+                           (:doctype "<!DOCTYPE"))))
+           (when (and literal
+                      (<= (+ index (length literal)) (length text))
+                      (string= literal text
+                               :start2 index
+                               :end2 (+ index (length literal))))
+             kind))))
+      (otherwise nil))))
