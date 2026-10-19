@@ -171,24 +171,28 @@ Under the :REJECT policy this signals instead."
       (pop (xml-parser-stack parser)))
   nil)
 
-(defun %parser-content-token (parser token)
-  "Interpret TOKEN inside an element; return its event, or NIL when it has none."
-  (case (xml-token-kind token)
-    ((:text :cdata)
-     (%parser-characters parser (xml-token-value token) (xml-token-position token)))
-    (:entity-reference (%parser-entity-reference parser token))
-    (:comment
-     (%parser-event parser :comment :text (xml-token-value token)
-                                    :position (xml-token-position token)))
-    (:processing-instruction (%parser-pi parser token))
-    (:start-tag-open
-     (%parser-start-element parser (%parser-next-token parser)))
-    (:end-tag-open
-     (%parser-end-element parser (%parser-next-token parser)))
-    (:eof (%parser-content-end parser token))
-    (otherwise
-     (%parser-token-error parser token (xml-message :unexpected-token-in-content)
-                          :content nil))))
+(defun %parser-content-unexpected-token (parser token)
+  (%parser-token-error parser token (xml-message :unexpected-token-in-content)
+                       :content nil))
+
+(defun %parser-content-end-tag (parser token)
+  (declare (ignore token))
+  (%parser-end-element parser (%parser-next-token parser)))
+
+(defun %parser-content-start-tag (parser token)
+  (declare (ignore token))
+  (%parser-start-element parser (%parser-next-token parser)))
+
+(defun %parser-content-comment (parser token)
+  (%parser-event parser :comment :text (xml-token-value token)
+                             :position (xml-token-position token)))
+
+(defun %parser-content-character-data (parser token)
+  (%parser-characters parser
+                      (xml-token-value token)
+                      (xml-token-position token)))
+
+(define-parser-token-dispatch %parser-content-token +xml-parser-token-rules+ :content)
 
 (defun %parser-due-skip (parser)
   "Return the event of a skipped entity in replacement text that the tokenizer has passed, or NIL.

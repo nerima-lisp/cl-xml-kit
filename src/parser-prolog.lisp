@@ -186,25 +186,22 @@ Return the value and the index after its closing quote."
                              entities)
                             (xml-token-position token)))))
 
-(defun %parser-top-level-token (parser token)
-  "Interpret TOKEN outside the root element; return its event, or NIL when it has none."
-  (case (xml-token-kind token)
-    (:text (%parser-top-level-text parser token))
-    (:entity-reference (%parser-top-level-reference parser token))
-    (:comment
-     (%parser-event parser :comment :text (xml-token-value token)
-                                    :position (xml-token-position token)))
-    (:processing-instruction (%parser-top-level-pi parser token))
-    (:cdata
-     (%parser-token-error parser token (xml-message :cdata-outside-root)
-                          :well-formedness :root-element))
-    (:doctype
-     (when (xml-parser-root-seen parser)
-       (%parser-token-error parser token (xml-message :doctype-after-root)
-                            :doctype :document-prolog))
-     (%parser-doctype parser token))
-    (:start-tag-open (%parser-root-element parser token))
-    (:end-tag-open
-     (%parser-token-error parser token (xml-message :end-tag-without-element)
-                          :element-type-match :start-tag))
-    (:eof (%parser-end-document parser token))))
+(defun %parser-top-level-end-tag (parser token)
+  (%parser-token-error parser token (xml-message :end-tag-without-element)
+                       :element-type-match :start-tag))
+
+(defun %parser-top-level-doctype (parser token)
+  (when (xml-parser-root-seen parser)
+    (%parser-token-error parser token (xml-message :doctype-after-root)
+                         :doctype :document-prolog))
+  (%parser-doctype parser token))
+
+(defun %parser-top-level-cdata (parser token)
+  (%parser-token-error parser token (xml-message :cdata-outside-root)
+                       :well-formedness :root-element))
+
+(defun %parser-top-level-comment (parser token)
+  (%parser-event parser :comment :text (xml-token-value token)
+                             :position (xml-token-position token)))
+
+(define-parser-token-dispatch %parser-top-level-token +xml-parser-token-rules+ :top-level)
