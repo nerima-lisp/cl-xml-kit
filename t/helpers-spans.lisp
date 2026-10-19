@@ -4,6 +4,8 @@
 
 (in-package #:cl-xml-kit/test)
 
+(declaim (ftype (function (t &rest t) t) spans-scan))
+
 (defparameter +spans-bom+ (string (code-char #xFEFF)))
 (defparameter +spans-crlf+ (coerce '(#\Return #\Linefeed) 'string))
 (defparameter +spans-lf+ (string #\Linefeed))
@@ -16,10 +18,6 @@
           do (write-string line stream)
              (when more
                (write-string separator stream)))))
-
-(defun spans-crlf (&rest lines)
-  "Return LINES joined by CRLF."
-  (spans-join +spans-crlf+ lines))
 
 (defun spans-line-break (style)
   "Return the line break string of STYLE, :LF, :CRLF, or :CR.
@@ -93,7 +91,9 @@ lines, and a redeclared prefix.")
 
 (defun spans-scan (source &rest options)
   "Return the span document of SOURCE; a scan failure propagates to the test."
-  (apply #'cl-xml-kit::scan-xml-spans source options))
+  (cl-weave:with-continuation-result (document success)
+      (apply #'cl-xml-kit::scan-xml-spans source #'success #'error options)
+    document))
 
 (defun spans-root (source)
   "Return the span element of the document element of SOURCE."
@@ -120,7 +120,6 @@ lines, and a redeclared prefix.")
                (cl-xml-kit::span-element-end-tag-end element))))
 
 (defun spans-child-elements (element)
-  "Return the span element children of ELEMENT."
   (remove-if-not #'cl-xml-kit::span-element-p
                  (cl-xml-kit::span-element-children element)))
 

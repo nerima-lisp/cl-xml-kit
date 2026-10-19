@@ -77,10 +77,24 @@ either needle is missing."
 
 (defun edit-context (source &key (path "/root") (resource-limits *default-xml-resource-limits*)
                                  (external-entity-policy :reject))
-  "Return the path context that the edit functions build for SOURCE and PATH.
+  "Return the path context built for SOURCE and PATH.
 A SOURCE that does not parse signals its parse condition into the caller."
-  (cl-xml-kit::%path-context source path :resource-limits resource-limits
-                                         :external-entity-policy external-entity-policy))
+  (cl-weave:with-continuation-result (context success)
+      (cl-xml-kit::%path-context source path #'success #'error
+                                 :resource-limits resource-limits
+                                 :external-entity-policy external-entity-policy)
+    context))
+(defun edit-verify-result (context candidate expected &rest options)
+  "Return CANDIDATE or signal the condition delivered by the verification callbacks."
+  (cl-weave:with-continuation-result (result success)
+      (apply #'cl-xml-kit::%edit-verify context candidate expected #'success #'error options)
+    result))
+(defun edit-finish-result (context start end replacement expected &rest options)
+  "Return the checked source or signal the condition delivered by the edit callbacks."
+  (cl-weave:with-continuation-result (result success)
+      (apply #'cl-xml-kit::%edit-finish
+             context start end replacement expected #'success #'error options)
+    result))
 
 (defun edit-chain (source)
   "Return the DOM elements of SOURCE from the innermost outward, following the first element child at each level."
@@ -104,7 +118,7 @@ A cause of another type signals a slot or type error, so the test fails."
 (defun edit-namespace-of (source path)
   "Return the namespace URI of the element that the first match of PATH in SOURCE belongs to.
 Signals an error when PATH matches nothing."
-  (let ((match (or (first (select-xml source path))
+  (let ((match (or (first (path-select source path))
                    (error "~S matches nothing in the edited document." path))))
     (xml-name-namespace-uri (xml-element-name (xml-match-element match)))))
 
@@ -113,7 +127,7 @@ Signals an error when PATH matches nothing."
                 "decoded value VALUE under EQUAL, where EXPECTED is (PATH VALUE). A "
                 "path that matches nothing compares as :NO-MATCH.")
   (destructuring-bind (path value) expected
-    (let* ((match (first (select-xml source path)))
+    (let* ((match (first (path-select source path)))
            (actual (if match (xml-match-value match) :no-match)))
       (values (equal actual value) actual value))))
 
@@ -129,7 +143,7 @@ The children of an element that references a markup entity are skipped, since
 SELECT-XML refuses to enumerate them; every other condition propagates."
   (let ((matches nil))
     (labels ((walk (path)
-               (dolist (match (handler-case (select-xml source path)
+               (dolist (match (handler-case (path-select source path)
                                 (xml-unsupported-edit () nil)))
                  (push match matches)
                  (walk (concatenate 'string (xml-match-path match) "/*")))))
@@ -155,20 +169,31 @@ signals its parse condition into the caller."
   "Parse FRAGMENT inside <inner/>, the innermost element of +FRAGMENT-SOURCE+, as an edit would.
 The context carries the path /target. Return the element and FRAGMENT without
 the XML whitespace around it; a refusal signals into the caller."
-  (cl-xml-kit::%edit-fragment-element
-   (edit-context +fragment-source+ :path "/target" :resource-limits resource-limits
-                                   :external-entity-policy external-entity-policy)
-   (edit-chain +fragment-source+)
-   fragment))
+  (cl-weave:with-continuation-values (result success)
+      (cl-xml-kit::%edit-fragment-element
+       (edit-context +fragment-source+ :path "/target" :resource-limits resource-limits
+                                       :external-entity-policy external-entity-policy)
+       (edit-chain +fragment-source+)
+       fragment #'success #'error)
+    (values-list result)))
 
 (defun edit-apply (operation source path value &rest options)
-  "Call the public edit that OPERATION names, :SET, :DELETE, or :APPEND, on SOURCE and PATH.
-VALUE is the value or fragment of :SET and :APPEND and is not passed to :DELETE.
-An unknown OPERATION signals an ECASE error, so a mistyped table row fails."
+  "Call the public edit that OPERATION names, capturing its success callback.
+VALUE is passed to :SET and :APPEND but not to :DELETE. An unknown OPERATION
+signals an ECASE error, so a mistyped table row fails."
   (ecase operation
-    (:set (apply #'edit-xml-set source path value options))
-    (:delete (apply #'edit-xml-delete source path options))
-    (:append (apply #'edit-xml-append source path value options))))
+    (:set
+     (cl-weave:with-continuation-result (result success)
+         (apply #'edit-xml-set source path value #'success #'error options)
+       result))
+    (:delete
+     (cl-weave:with-continuation-result (result success)
+         (apply #'edit-xml-delete source path #'success #'error options)
+       result))
+    (:append
+     (cl-weave:with-continuation-result (result success)
+         (apply #'edit-xml-append source path value #'success #'error options)
+       result))))
 
 (defun edit-within-p (source result start end)
   "Return true when RESULT equals SOURCE before START and after END of SOURCE."

@@ -9,13 +9,19 @@
   "Return (KIND PATH) for every match of PATH in SOURCE under the SELECT-XML OPTIONS.
 A SELECT-XML condition propagates to the caller."
   (mapcar (lambda (match) (list (xml-match-kind match) (xml-match-path match)))
-          (apply #'select-xml source path options)))
+          (apply #'path-select source path options)))
+
+(defun path-select (source path &rest options)
+  "Return the matches selected by PATH, or signal the condition delivered on failure."
+  (cl-weave:with-continuation-result (matches success)
+      (apply #'select-xml source path #'success #'error options)
+    matches))
 
 (defun path-slices (source path)
   "Return the text of SOURCE that each match of PATH spans; a SELECT-XML condition propagates."
   (mapcar (lambda (match)
             (subseq source (xml-match-start match) (xml-match-end match)))
-          (select-xml source path)))
+          (path-select source path)))
 
 (defun path-match-identity (match)
   "Return the KIND, START, and END of MATCH, which tell matches of one source apart."
@@ -23,7 +29,7 @@ A SELECT-XML condition propagates to the caller."
 
 (defun path-match-identities (source path)
   "Return the identity of every match of PATH in SOURCE, in document order."
-  (mapcar #'path-match-identity (select-xml source path)))
+  (mapcar #'path-match-identity (path-select source path)))
 
 ;;; The step names are those CORPUS-GEN-DOCUMENT writes, plus one it never
 ;;; writes, so generated paths both hit and miss.
