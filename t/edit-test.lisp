@@ -14,7 +14,7 @@
     (expect source :to-equal +edit-source+)))
 
 (it "keeps the leading U+FEFF, the CRLF line breaks, and everything outside the range"
-  (let ((result (edit-xml-set +edit-source+ "/root/@b" "x")))
+  (let ((result (edit-apply :set +edit-source+ "/root/@b" "x")))
     (expect (list (char result 0) (count #\Return result) (length result))
             :to-equal (list (code-char #xFEFF) (count #\Return +edit-source+)
                             (- (length +edit-source+) 5)))
@@ -56,3 +56,83 @@
           :to-signal-xml '(xml-well-formedness-error
                            (xml-well-formedness-error-constraint :well-formedness)
                            (xml-well-formedness-error-expected :end-tag))))
+(describe "continuation callbacks"
+  (it-each ((:set "/root/@b" "x")
+            (:delete "/root/@b" nil)
+            (:append "/root/list" "<n/>"))
+    "calls the success callback once for ~S at ~S"
+    (operation path value)
+  (let ((calls 0)
+        (result nil))
+    (flet ((invoke-edit (success failure)
+             (ecase operation
+               (:set (edit-xml-set +edit-source+ path value success failure))
+               (:delete (edit-xml-delete +edit-source+ path success failure))
+               (:append (edit-xml-append +edit-source+ path value success failure)))))
+      (cl-weave:with-continuation-result (source success)
+          (invoke-edit
+           (lambda (edited)
+             (incf calls)
+             (funcall #'success edited))
+           #'error)
+        (setf result source)))
+    (expect calls :to-equal 1)
+    (expect (stringp result) :to-be-truthy)))
+
+  (it-each ((:set "/a/@x" "v")
+            (:delete "/a/@x" nil)
+            (:append "/a" "<n/>"))
+    "calls the failure callback once for ~S when its source does not parse"
+    (operation path value)
+  (let ((calls 0)
+        (received nil))
+    (flet ((invoke-edit (success failure)
+             (ecase operation
+               (:set (edit-xml-set "<a>" path value success failure))
+               (:delete (edit-xml-delete "<a>" path success failure))
+               (:append (edit-xml-append "<a>" path value success failure)))))
+      (cl-weave:with-continuation-result (condition failure)
+          (invoke-edit
+           (lambda (source)
+             (declare (ignore source))
+             (error "Success must not run for malformed XML."))
+           (lambda (condition)
+             (incf calls)
+             (funcall #'failure condition)))
+        (setf received condition)))
+    (expect calls :to-equal 1)
+    (expect (typep received 'xml-well-formedness-error) :to-be-truthy)))
+
+  (it-each ((:set "/root/@b" "x")
+            (:delete "/root/@b" nil)
+            (:append "/root/list" "<n/>"))
+    "propagates callback errors from ~S"
+    (operation path value)
+  (let ((success-error (make-condition 'simple-error :format-control "success callback"))
+        (failure-error (make-condition 'simple-error :format-control "failure callback")))
+    (flet ((invoke-edit (source success failure)
+             (ecase operation
+               (:set (edit-xml-set source path value success failure))
+               (:delete (edit-xml-delete source path success failure))
+               (:append (edit-xml-append source path value success failure)))))
+      (expect
+       (handler-case
+           (progn
+             (invoke-edit +edit-source+
+                          (lambda (result)
+                            (declare (ignore result))
+                            (error success-error))
+                          #'error)
+             nil)
+         (simple-error (condition) (eq condition success-error)))
+       :to-be-truthy)
+      (expect
+       (handler-case
+           (progn
+             (invoke-edit "<a>" #'identity
+                          (lambda (condition)
+                            (declare (ignore condition))
+                            (error failure-error)))
+             nil)
+         (simple-error (condition) (eq condition failure-error)))
+       :to-be-truthy)))))

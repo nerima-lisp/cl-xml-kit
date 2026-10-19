@@ -20,21 +20,21 @@
             ("/root/holder/@x" "2" "x=\"1\"" "2" 3 1))
       "sets ~S to ~S by replacing only the characters between the quotes of ~S with ~S"
       (path value needle replacement offset length)
-    (expect (edit-xml-set +edit-source+ path (spans-lines value))
+    (expect (edit-apply :set +edit-source+ path (spans-lines value))
             :to-equal (edit-expected needle replacement :offset offset :length length)))
 
   (it-each (("plain") ("") ("a&b") ("a<b>c") ("&#65;") ("say \"hi\" 'there'")
             ("t{tab}l{lf}r{cr}x"))
       "writes the attribute value ~S so that it selects back as that value"
       (value)
-    (expect (edit-xml-set +edit-source+ "/root/@b" (spans-lines value))
+    (expect (edit-apply :set +edit-source+ "/root/@b" (spans-lines value))
             :to-select-value "/root/@b" (spans-lines value)))
 
   (it-property "writes generated attribute values so that they select back as the value set"
       ((value (gen-string :max-length 12 :alphabet (format nil "a \"'&<>]~C~C~C~C"
                                                           #\Tab #\Linefeed #\Return
                                                           (code-char #x65E5)))))
-    (expect (edit-xml-set +edit-source+ "/root/item/@name" value)
+    (expect (edit-apply :set +edit-source+ "/root/item/@name" value)
             :to-select-value "/root/item/@name" value)))
 
 (describe "adding an attribute"
@@ -52,7 +52,7 @@
             ("/root/bare/@id" "1<2" "<bare/>" " id=\"1&lt;2\"" 5))
       "adds ~S with the value ~S by inserting, after ~S, the text ~S"
       (path value needle insertion offset)
-    (expect (edit-xml-set +edit-source+ path value)
+    (expect (edit-apply :set +edit-source+ path value)
             :to-equal (edit-expected needle insertion :offset offset :length 0)))
 
   (it-each (("<root a=\"1\"~%      b=\"2\">x</root>" "/root/@c" "3"
@@ -68,10 +68,10 @@
             ("<r><a/></r>" "/r/a/@y" "v" "<r><a y=\"v\"/></r>"))
       "lays out the new attribute in ~S, set at ~S to ~S, as ~S"
       (source path value expected)
-    (expect (edit-xml-set (spans-lines source) path value) :to-equal (spans-lines expected)))
+    (expect (edit-apply :set (spans-lines source) path value) :to-equal (spans-lines expected)))
 
   (it "adds an attribute that selects back as the value that was set"
-    (expect (edit-xml-set +edit-source+ "/root/bare/@id" "a&b")
+    (expect (edit-apply :set +edit-source+ "/root/bare/@id" "a&b")
             :to-select-value "/root/bare/@id" "a&b"))
 
   (it-property "restores a generated document when an added attribute is deleted again"
@@ -82,11 +82,11 @@
            (matches (edit-element-matches source))
            (match (nth (mod choice (length matches)) matches))
            (path (concatenate 'string (xml-match-path match) "/@zz"))
-           (edited (edit-xml-set source path value)))
+           (edited (edit-apply :set source path value)))
       (expect (edit-within-p source edited (xml-match-start match) (xml-match-end match))
               :to-be-truthy)
       (expect edited :to-select-value path value)
-      (expect (edit-xml-delete edited path) :to-equal source))))
+      (expect (edit-apply :delete edited path nil) :to-equal source))))
 
 (describe "deleting an attribute"
   (it-each (("/root/item/@id" " id=\"1\"")
@@ -98,8 +98,8 @@
             ("/root/p:item/@p:code" " p:code=\"7\""))
       "deletes ~S together with the whitespace before it, ~S"
       (path text)
-    (expect (edit-xml-delete +edit-source+ path)
+    (expect (edit-apply :delete +edit-source+ path nil)
             :to-equal (edit-expected (spans-lines text :crlf) "")))
 
   (it "no longer selects a deleted attribute"
-    (expect (select-xml (edit-xml-delete +edit-source+ "/root/@a") "/root/@a") :to-equal nil)))
+    (expect (path-select (edit-apply :delete +edit-source+ "/root/@a" nil) "/root/@a") :to-equal nil)))

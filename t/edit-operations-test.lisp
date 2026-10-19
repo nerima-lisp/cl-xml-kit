@@ -19,35 +19,60 @@
           ("/root/refs/text()" "a{cr}{lf}b" "&#65;&amp;&e;" "a&#13;~%b" 0 nil))
     "sets ~S to ~S by replacing ~S with ~S"
     (path value needle replacement offset length)
-  (expect (edit-xml-set +edit-source+ path (spans-lines value))
+  (expect (edit-apply :set +edit-source+ path (spans-lines value))
           :to-equal (edit-expected needle replacement :offset offset :length length)))
 
 (it "keeps a document without carriage returns free of them when setting text"
-  (expect (edit-xml-set (spans-lines "<r>~%  <a>x</a>~%</r>") "/r/a/text()" (spans-lines "p~%q"))
+  (expect (edit-apply :set (spans-lines "<r>~%  <a>x</a>~%</r>") "/r/a/text()" (spans-lines "p~%q"))
           :to-equal (spans-lines "<r>~%  <a>p~%q</a>~%</r>")))
 
 (it "sets text within the text node limit of the caller"
-  (expect (edit-xml-set "<r><a>x</a></r>" "/r/a/text()" "abcde"
-                        :resource-limits (make-xml-resource-limits :max-text-node-length 5))
+  (expect (edit-apply :set "<r><a>x</a></r>" "/r/a/text()" "abcde" :resource-limits (make-xml-resource-limits :max-text-node-length 5))
           :to-equal "<r><a>abcde</a></r>"))
 
-(it-each (("plain") ("") ("  padded  ") ("a&b<c>d") ("a]]>b") ("<![CDATA[x]]>") ("&#65;")
-          ("l1{lf}l2") ("cr{cr}x") ("crlf{cr}{lf}x"))
-    "sets the text ~S so that it selects back as that value in empty, CDATA, and mixed-run content"
-    (value)
-  (expect (loop for path in '("/root/bare/text()" "/root/cdata/text()" "/root/item/text()")
-                for edited = (edit-xml-set +edit-source+ path (spans-lines value))
-                for selected = (xml-match-value (first (select-xml edited path)))
-                unless (equal selected (spans-lines value))
-                  collect (list path selected))
-          :to-equal nil))
+(it-each (("/root/bare/text()" "plain")
+            ("/root/cdata/text()" "plain")
+            ("/root/item/text()" "plain")
+            ("/root/bare/text()" "")
+            ("/root/cdata/text()" "")
+            ("/root/item/text()" "")
+            ("/root/bare/text()" "  padded  ")
+            ("/root/cdata/text()" "  padded  ")
+            ("/root/item/text()" "  padded  ")
+            ("/root/bare/text()" "a&b<c>d")
+            ("/root/cdata/text()" "a&b<c>d")
+            ("/root/item/text()" "a&b<c>d")
+            ("/root/bare/text()" "a]]>b")
+            ("/root/cdata/text()" "a]]>b")
+            ("/root/item/text()" "a]]>b")
+            ("/root/bare/text()" "<![CDATA[x]]>")
+            ("/root/cdata/text()" "<![CDATA[x]]>")
+            ("/root/item/text()" "<![CDATA[x]]>")
+            ("/root/bare/text()" "&#65;")
+            ("/root/cdata/text()" "&#65;")
+            ("/root/item/text()" "&#65;")
+            ("/root/bare/text()" "l1{lf}l2")
+            ("/root/cdata/text()" "l1{lf}l2")
+            ("/root/item/text()" "l1{lf}l2")
+            ("/root/bare/text()" "cr{cr}x")
+            ("/root/cdata/text()" "cr{cr}x")
+            ("/root/item/text()" "cr{cr}x")
+            ("/root/bare/text()" "crlf{cr}{lf}x")
+            ("/root/cdata/text()" "crlf{cr}{lf}x")
+            ("/root/item/text()" "crlf{cr}{lf}x"))
+    "sets the text ~S at ~S so that the target selects that value"
+    (path value)
+  (let* ((written (spans-lines value))
+         (edited (edit-apply :set +edit-source+ path written))
+         (match (first (path-select edited path))))
+    (expect (xml-match-value match) :to-equal written)))
 
 (it-property "sets generated text so that it selects back as the value that was set"
     ((path (gen-member '("/root/bare/text()" "/root/cdata/text()" "/root/refs/text()")))
      (value (gen-string :max-length 12 :alphabet (format nil "t &<>]~C~C~C~C"
                                                         #\Tab #\Linefeed #\Return
                                                         (code-char #xE9)))))
-  (expect (edit-xml-set +edit-source+ path value) :to-select-value path value))
+  (expect (edit-apply :set +edit-source+ path value) :to-select-value path value))
 
 (it-each (("<a>x</a>" "x") ("<a>&#65;<![CDATA[b]]></a>" "&#65;<![CDATA[b]]>")
           ("<a/>" nil) ("<a>x<b/></a>" nil) ("<a><b/></a>" nil))

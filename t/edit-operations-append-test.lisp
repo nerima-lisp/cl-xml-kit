@@ -17,7 +17,7 @@
           ("/root/bare" " {cr}{lf}<n/>{tab} " "<bare/>" "><n/></bare>" 5 2))
     "appends to ~S the fragment ~S by writing, after ~S, the text ~S"
     (path fragment needle written offset length)
-  (expect (edit-xml-append +edit-source+ path (spans-lines fragment))
+  (expect (edit-apply :append +edit-source+ path (spans-lines fragment))
           :to-equal (edit-expected needle written :offset offset :length length)))
 
 (it-each (("<r><p></p></r>" "/r/p" "<r><p><n/></p></r>")
@@ -29,7 +29,7 @@
           ("<r>{cr}{lf}{cr}{lf}  <a/>{cr}{lf}</r>" "/r" "<r>{cr}{lf}{cr}{lf}  <a/>{cr}{lf}  <n/>{cr}{lf}</r>"))
     "appends <n/> to ~S at ~S, giving ~S"
     (source path expected)
-  (expect (edit-xml-append (spans-lines source) path "<n/>") :to-equal (spans-lines expected)))
+  (expect (edit-apply :append (spans-lines source) path "<n/>") :to-equal (spans-lines expected)))
 
 (it-each ((:lf "<r>~%  <a/>~%</r>" "<r>~%  <a/>~%  <n/>~%</r>")
           (:crlf "<r>~%  <a/>~%</r>" "<r>~%  <a/>~%  <n/>~%</r>")
@@ -39,7 +39,7 @@
           (:cr "<r>~%{tab}<a/>~%</r>" "<r>~%{tab}<a/>~%{tab}<n/>~%</r>"))
     "copies the ~S indentation of ~S when appending, giving ~S"
     (style source expected)
-  (expect (edit-xml-append (spans-lines source style) "/r" "<n/>")
+  (expect (edit-apply :append (spans-lines source style) "/r" "<n/>")
           :to-equal (spans-lines expected style)))
 
 (it-each (("/root/p:item" "<p:child/>" "/root/p:item/p:child" "urn:other")
@@ -47,10 +47,10 @@
           ("/root/list" "<plain/>" "/root/list/plain" "urn:default"))
     "appends to ~S the fragment ~S, resolving ~S in the scope of the parent to ~S"
     (path fragment selected uri)
-  (expect (edit-namespace-of (edit-xml-append +edit-source+ path fragment) selected)
+  (expect (edit-namespace-of (edit-apply :append +edit-source+ path fragment) selected)
           :to-equal uri))
 
 (it "selects the appended element as the last child"
   (expect (mapcar #'xml-match-path
-                  (select-xml (edit-xml-append +edit-source+ "/root/list" "<added/>") "/root/list/*"))
+                  (path-select (edit-apply :append +edit-source+ "/root/list" "<added/>") "/root/list/*"))
           :to-equal '("/root[1]/list[1]/entry[1]" "/root[1]/list[1]/added[1]")))
