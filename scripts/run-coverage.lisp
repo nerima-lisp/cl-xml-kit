@@ -136,18 +136,23 @@
           (coverage-form-identity (getf owner :form))
         (list path (getf form :kind) operator name)))))
 
-  (defun coverage-exclusion-key (entry)
+  (defun coverage-form-entry-key (entry)
     (list (getf entry :path) (getf entry :kind)
           (getf entry :operator) (getf entry :name)))
-  (defun coverage-read-exclusions (pathname)
+  (defun coverage-read-form-entries (pathname &optional follow-up-p)
     (labels ((valid-entry-p (entry)
-               (let ((keys (and (listp entry)
-                                (= (length entry) 10)
-                                (loop for key in entry by #'cddr
-                                      collect key))))
+               (let* ((keys (and (listp entry)
+                                 (evenp (length entry))
+                                 (loop for key in entry by #'cddr
+                                       collect key)))
+                      (expected-keys
+                        (if follow-up-p
+                            '(:action :kind :name :operator :owner :path :reason)
+                            '(:kind :name :operator :path :reason))))
                  (and keys
+                      (every #'keywordp keys)
                       (equal (sort (copy-list keys) #'string< :key #'symbol-name)
-                             '(:kind :name :operator :path :reason))
+                             expected-keys)
                       (stringp (getf entry :path))
                       (plusp (length (getf entry :path)))
                       (eq (getf entry :kind) :expression)
@@ -157,22 +162,31 @@
                       (plusp (length
                               (string-trim '(#\Space #\Tab #\Newline #\Return)
                                            (getf entry :reason))))
-                      (coverage-exclusion-allowed-p entry)))))
+                      (if follow-up-p
+                          (and (member (getf entry :action) '(:test :delete))
+                               (member (getf entry :owner) '(:w2 :w3 :p3)))
+                          (coverage-exclusion-allowed-p entry))))))
       (let ((*read-eval* nil))
         (with-open-file (stream pathname :direction :input)
           (let ((entries (read stream nil :eof)))
             (unless (and (listp entries)
                          (eq :eof (read stream nil :eof))
                          (every #'valid-entry-p entries))
-              (error "Invalid coverage exclusion manifest: ~A" pathname))
+              (error "Invalid coverage ~A manifest: ~A"
+                     (if follow-up-p "follow-up" "exclusion") pathname))
             (unless (= (length entries)
                        (length (remove-duplicates
-                                (mapcar #'coverage-exclusion-key entries)
+                                (mapcar #'coverage-form-entry-key entries)
                                 :test #'equal)))
-              (error "Coverage exclusion manifest contains duplicate entries"))
+              (error "Coverage ~A manifest contains duplicate entries"
+                     (if follow-up-p "follow-up" "exclusion")))
             entries)))))
-  (defun coverage-check-exclusions (files manifest-path)
-    (let* ((entries (coverage-read-exclusions manifest-path))
+  (defun coverage-check-form-accounting
+    (files manifest-path
+     &optional (follow-up-path
+                 (merge-pathnames "coverage-follow-ups.sexp" manifest-path)))
+    (let* ((entries (coverage-read-form-entries manifest-path))
+           (follow-ups (coverage-read-form-entries follow-up-path t))
            (source-forms
              (loop for file in files
                    for path = (enough-namestring
@@ -189,10 +203,18 @@
                    append (mapcar (lambda (form)
                                     (coverage-form-key path form top-level-forms))
                                   (getf file :uncovered-forms))))
-           (excluded (mapcar #'coverage-exclusion-key entries))
+           (excluded (mapcar #'coverage-form-entry-key entries))
+           (follow-up-keys (mapcar #'coverage-form-entry-key follow-ups))
            (unique-uncovered (remove-duplicates (copy-list uncovered) :test #'equal))
-           (stale (set-difference excluded unique-uncovered :test #'equal)))
-      (dolist (entry entries)
+           (stale-exclusions (set-difference excluded unique-uncovered :test #'equal))
+           (stale-follow-ups
+             (set-difference follow-up-keys unique-uncovered :test #'equal))
+           (unaccounted
+             (set-difference unique-uncovered
+                             (append excluded follow-up-keys)
+                             :test #'equal))
+           (overlap (intersection excluded follow-up-keys :test #'equal)))
+      (dolist (entry (append entries follow-ups))
         (let* ((forms (cdr (assoc (getf entry :path) source-forms :test #'string=)))
                (targets
                  (remove-if-not
@@ -203,14 +225,23 @@
                            (equal name (getf entry :name)))))
                   forms)))
           (unless (= (length targets) 1)
-            (error "Coverage exclusion must identify one top-level form: ~S (matches=~D)"
-                   (coverage-exclusion-key entry) (length targets))))
-      (unless (null stale)
-        (error "Coverage exclusions are stale: ~S" stale))
-      (format t "coverage-exclusions matched=~D uncovered-form-keys=~D stale=0~%"
+            (error "Coverage manifest must identify one top-level form: ~S (matches=~D)"
+                   (coverage-form-entry-key entry) (length targets)))))
+      (unless (null overlap)
+        (error "Coverage forms cannot be both excluded and assigned for follow-up: ~S"
+               overlap))
+      (unless (null stale-exclusions)
+        (error "Coverage exclusions are stale: ~S" stale-exclusions))
+      (unless (null stale-follow-ups)
+        (error "Coverage follow-ups are stale: ~S" stale-follow-ups))
+      (unless (null unaccounted)
+        (error "Uncovered forms lack a coverage manifest entry: ~S" unaccounted))
+      (format t
+              "coverage-exclusions matched=~D follow-ups=~D uncovered-form-keys=~D stale=0~%"
               (length (intersection excluded unique-uncovered :test #'equal))
+              (length (intersection follow-up-keys unique-uncovered :test #'equal))
               (length unique-uncovered))
-      entries)))
+      entries))
   (defun coverage-require-files-measured (source-files statistics)
     (let ((measured (mapcar (lambda (file) (truename (getf file :pathname)))
                             statistics)))
@@ -284,4 +315,4 @@
                   (cl-weave:coverage-file-statistics
                    :include-pathnames include-pathnames))))
           (coverage-emit-statistics statistics minimum-expression minimum-branch)
-          (coverage-check-exclusions files exclusion-path))))))
+          (coverage-check-form-accounting files exclusion-path))))))

@@ -85,6 +85,7 @@
       sourceInclude = [
         ./scripts/xmlconf-exclusions.sexp
         ./scripts/coverage-exclusions.sexp
+        ./scripts/coverage-follow-ups.sexp
         ./t/__snapshots__/snapshots.sexp
       ];
 
