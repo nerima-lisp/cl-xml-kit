@@ -568,18 +568,20 @@ continuation, overlong, surrogate, and out-of-range sequences. `cl-xml-kit`
 still owns XML BOM stripping, input-size accounting, source positions, and the
 mapping of codec conditions into `xml-decode-error`.
 
-`cl-parser-kit` is not a runtime dependency. XML has a fixed grammar, and a
-direct tokenizer/state machine avoids importing parser-combinator behavior,
-token limits, and failure-return conventions that do not match the XML event
-contract. `cl-boundary-kit` is also not a dependency because XML input bounds
-are local parser limits, not a process or filesystem boundary.
+`cl-parser-kit` is a runtime dependency for the tokenizer refactor, which will
+use its cursor API. The Nix flake pins the dependency source at v1.2.0. ASDF
+declares the system dependency without enforcing a version in other ASDF
+environments. This pin makes the API available; parser behavior changes with
+the tokenizer integration. `cl-xml-kit` retains ownership of the XML grammar,
+token kinds, event semantics, XML-specific resource limits, and condition
+mapping. `cl-boundary-kit` is not a dependency because XML input bounds are
+local parser limits, not a process or filesystem boundary.
 
-This satisfies the dependency policy because the chosen dependency is a
-same-organization lower-layer library, the dependency graph remains acyclic,
-and the implementation uses a small, documented API surface. The ASDF
-`:depends-on` entry is the dependency graph's source of truth. The release
-stream must pin the sibling dependency to a released version in `flake.lock`
-and record the dependency closure in the release review.
+The runtime dependencies are same-organization lower-layer libraries, and
+their dependency graph remains acyclic. The ASDF `:depends-on` entry is the
+dependency graph's source of truth. The release stream pins each dependency to
+a released version in `flake.lock` and records the dependency closure in the
+release review.
 
 ### Upstream changes
 

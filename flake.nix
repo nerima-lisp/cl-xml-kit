@@ -29,6 +29,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    cl-parser-kit = {
+      url = "github:nerima-lisp/cl-parser-kit/v1.2.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -43,6 +48,7 @@
       cl-weave,
       cl-host-kit,
       cl-codec-kit,
+      cl-parser-kit,
       treefmt-nix,
     }:
     let
@@ -76,7 +82,10 @@
         platforms = nixpkgs.lib.platforms.unix;
       };
 
-      lispDependencies = ctx: [ cl-codec-kit.packages.${ctx.system}.cl-codec-kit ];
+      lispDependencies = ctx: [
+        cl-codec-kit.packages.${ctx.system}.cl-codec-kit
+        cl-parser-kit.packages.${ctx.system}.cl-parser-kit
+      ];
       lispCheckDependencies = ctx: [
         cl-weave.packages.${ctx.system}.cl-weave
         (clHostKitFor ctx.system)
@@ -156,12 +165,46 @@
             timeoutSeconds = 120;
           };
 
+          parserKitLoadCheck = ctx.cl.mkCommandCheck {
+            drv = ctx.package;
+            name = "cl-xml-kit-parser-kit-load";
+            command = [
+              (ctx.pkgs.lib.getExe ctx.pkgs.sbcl)
+              "--noinform"
+              "--non-interactive"
+              "--eval"
+              "(require :asdf)"
+              "--eval"
+              ''
+                (progn
+                  (asdf:load-system "cl-xml-kit")
+                  (let ((version
+                          (asdf:component-version
+                           (asdf:find-system "cl-parser-kit"))))
+                    (unless (string= version "1.2.0")
+                      (error "expected cl-parser-kit 1.2.0, got ~a" version))
+                    (format t "cl-parser-kit-version=~a~%" version))
+                  (dolist (name (list "MAKE-TOKENIZER-CURSOR"
+                                      "TOKENIZER-CURSOR-NEXT"))
+                    (multiple-value-bind (symbol status)
+                        (find-symbol name "CL-PARSER-KIT")
+                      (unless (and symbol (eq status :external) (fboundp symbol))
+                        (error "missing external function: ~a" name))
+                      (format t "export=~a status=~a fbound=~a~%"
+                              name status (fboundp symbol))))
+                  (format t "asdf-load-system=cl-xml-kit success~%"))
+              ''
+            ];
+            timeoutSeconds = 120;
+          };
+
           benchApp = ctx.cl.mkTestApp {
             pname = "cl-xml-kit-bench";
             inherit (ctx) src;
             runner = "run-benchmarks.lisp";
             lispDependencies = [
               cl-codec-kit.packages.${ctx.system}.cl-codec-kit
+              cl-parser-kit.packages.${ctx.system}.cl-parser-kit
               cl-weave.packages.${ctx.system}.cl-weave
               (clHostKitFor ctx.system)
             ];
@@ -171,6 +214,7 @@
         {
           checks.xmlconf = xmlconfCheck;
           checks.coverage = coverageCheck;
+          checks.parser-kit-load = parserKitLoadCheck;
           apps.bench = {
             type = "app";
             program = benchApp.program;

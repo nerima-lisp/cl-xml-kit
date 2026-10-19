@@ -17,7 +17,7 @@
   :homepage "https://github.com/nerima-lisp/cl-xml-kit"
   :bug-tracker "https://github.com/nerima-lisp/cl-xml-kit/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-xml-kit.git")
-  :depends-on ("cl-codec-kit") ; UTF-8 octet decoding at the input boundary.
+  :depends-on ("cl-codec-kit" "cl-parser-kit")
   :pathname "src"
   :serial t
   :components ((:file "package")
