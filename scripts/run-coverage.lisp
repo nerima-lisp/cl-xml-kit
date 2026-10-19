@@ -94,16 +94,18 @@
                         (t (coverage-form-name (second form))))))
         (values "ANONYMOUS" nil)))
   (defun coverage-exclusion-name-valid-p (name)
-    (or (and (stringp name)
-             (plusp (length (string-trim '(#\Space #\Tab #\Newline #\Return) name))))
-        (and (listp name) name
-             (every (lambda (item) (and (stringp item) (plusp (length item)))) name))
-        (and (listp name) name
-             (every (lambda (item)
-                      (and (listp item) (= (length item) 2)
-                           (every (lambda (part) (and (stringp part) (plusp (length part)))
-                                  item)))
-                    name)))))
+    (labels ((non-empty-name-string-p (value)
+               (and (stringp value)
+                    (plusp (length (string-trim '(#\Space #\Tab #\Newline #\Return) value))))))
+      (or (non-empty-name-string-p name)
+          (and (listp name) name
+               (every #'non-empty-name-string-p name))
+          (and (listp name) name
+               (every (lambda (item)
+                        (and (listp item)
+                             (= (length item) 2)
+                             (every #'non-empty-name-string-p item)))
+                      name)))))
   (defun coverage-exclusion-allowed-p (entry)
     (let ((operator (getf entry :operator))
           (name (getf entry :name)))
