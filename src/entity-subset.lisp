@@ -69,8 +69,7 @@ entity definition that follows the separating space."
 (defun %parse-external-id (text position context)
   "Read a SYSTEM or PUBLIC ExternalID at POSITION.
 
-Return the public ID or NIL, the system ID, and the position after the IDs and
-any following space."
+Return the system ID and the position after the IDs and any following space."
   (let* ((keyword-end (%word-end text position))
          (keyword (subseq text position keyword-end))
          (public-p (string= keyword "PUBLIC")))
@@ -82,21 +81,19 @@ any following space."
       (%entity-error context (xml-message :external-entity-needs-system-id)
                      :entity-declaration))
     (let* ((first-end (%quoted-string-end text position context))
-           (first-id (subseq text (1+ position) first-end))
            (after (%skip-xml-space text (1+ first-end))))
       (if (not public-p)
-          (values nil first-id after)
+          (values (subseq text (1+ position) first-end) after)
           (progn
             (unless (%quote-at-p text after)
               (%entity-error context (xml-message :public-needs-system-id)
                              :entity-declaration))
             (let ((system-end (%quoted-string-end text after context)))
-              (values first-id
-                      (subseq text (1+ after) system-end)
+              (values (subseq text (1+ after) system-end)
                       (%skip-xml-space text (1+ system-end)))))))))
 
 (defun %parse-external-entity-definition (text position context name parameter-p)
-  (multiple-value-bind (public-id system-id after)
+  (multiple-value-bind (system-id after)
       (%parse-external-id text position context)
     (unless (%close-at-p text after)
       (setf after (or (position #\> text :start after)
@@ -105,7 +102,7 @@ any following space."
                        :entity-declaration))))
     (values (make-xml-entity-declaration
              :name name :parameter-p parameter-p :external-p t
-             :public-id public-id :system-id system-id)
+             :system-id system-id)
             (1+ after))))
 
 (defun %parse-entity-declaration-at (text start context)

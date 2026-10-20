@@ -9,7 +9,7 @@
 
 (defstruct (xml-entity-declaration
             (:constructor %make-xml-entity-declaration
-                (name replacement-text parameter-p external-p public-id system-id))
+                (name replacement-text parameter-p external-p system-id))
             (:constructor %make-xml-entity-declaration-defaults ())
             (:copier nil))
   "An internal entity declaration, or an external declaration marker."
@@ -17,7 +17,6 @@
   (replacement-text nil :read-only t)
   (parameter-p nil :read-only t)
   (external-p nil :read-only t)
-  (public-id nil :read-only t)
   (system-id nil :read-only t))
 
 (defstruct (xml-entity-context
@@ -60,7 +59,7 @@
                             (and source (copy-seq source)) position 0 0 nil nil nil))
 
 (defun make-xml-entity-declaration (&key name replacement-text parameter-p
-                                         external-p public-id system-id)
+                                         external-p system-id)
   "Create an internal entity declaration for parser-local use."
   (unless (and (stringp name) (plusp (length name)))
     (xml-error 'xml-input-error :entity-name-invalid))
@@ -71,7 +70,6 @@
   (%make-xml-entity-declaration (copy-seq name)
                                 (and replacement-text (copy-seq replacement-text))
                                 (not (null parameter-p)) (not (null external-p))
-                                (and public-id (copy-seq public-id))
                                 (and system-id (copy-seq system-id))))
 
 (defun %entity-error (context message constraint &optional expected)

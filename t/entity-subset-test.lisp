@@ -24,15 +24,14 @@
                              (xml-well-formedness-error-expected nil)
                              (xml-condition-message ,message))))
 
-  (it-each (("<!ENTITY e PUBLIC '-//P' 's'>" ("-//P" "s" t))
-            ("<!ENTITY e PUBLIC \"-//P\" \"s\" >" ("-//P" "s" t))
-            ("<!ENTITY e SYSTEM 's'>" (nil "s" t))
-            ("<!ENTITY e SYSTEM 's' NDATA n>" (nil "s" t)))
-      "reads the external identifiers of ~S as ~{~S~^ ~}"
+  (it-each (("<!ENTITY e PUBLIC '-//P' 's'>" ("s" t))
+            ("<!ENTITY e PUBLIC \"-//P\" \"s\" >" ("s" t))
+            ("<!ENTITY e SYSTEM 's'>" ("s" t))
+            ("<!ENTITY e SYSTEM 's' NDATA n>" ("s" t)))
+      "reads the external system identifier of ~S as ~{~S~^ ~}"
       (subset expected)
     (let ((declaration (subset-declaration subset "e")))
-      (expect (list (cl-xml-kit::xml-entity-declaration-public-id declaration)
-                    (cl-xml-kit::xml-entity-declaration-system-id declaration)
+      (expect (list (cl-xml-kit::xml-entity-declaration-system-id declaration)
                     (cl-xml-kit::xml-entity-declaration-external-p declaration))
               :to-equal expected)))
 
