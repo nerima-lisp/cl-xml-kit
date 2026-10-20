@@ -1,4 +1,5 @@
-(("spans/fixture-slices" . "(\"<!DOCTYPE root [
+(("spans/fixture-slices" .
+                         "(\"<!DOCTYPE root [
   <!ENTITY e \\\"text\\\">
   <!ENTITY m \\\"<b/>\\\">
   <!ATTLIST item id ID #IMPLIED>
@@ -29,4 +30,19 @@
        comment -->\" \"
   \" \"<?inner pi?>\" \"
   \" \"<empty />\" \"<empty />\" \"\" \"
-\" \"<!-- trailing -->\")") ("serializer/nested-namespaces" . "\"<root xmlns=\\\"urn:default\\\" xmlns:p=\\\"urn:p1\\\" xmlns:a=\\\"urn:a\\\" a:id=\\\"root\\\"><p:child xmlns:p=\\\"urn:p2\\\" p:code=\\\"one\\\"><plain xmlns=\\\"\\\" a:kind=\\\"plain\\\"><p:leaf xmlns:p=\\\"urn:p3\\\"/></plain></p:child></root>\""))
+\" \"<!-- trailing -->\")")
+ ("serializer/nested-namespaces" .
+                                 "\"<root xmlns=\\\"urn:default\\\" xmlns:p=\\\"urn:p1\\\" xmlns:a=\\\"urn:a\\\" a:id=\\\"root\\\"><p:child xmlns:p=\\\"urn:p2\\\" p:code=\\\"one\\\"><plain xmlns=\\\"\\\" a:kind=\\\"plain\\\"><p:leaf xmlns:p=\\\"urn:p3\\\"/></plain></p:child></root>\"")
+ ("parser/mixed-content[0]" . ":start-document")
+ ("parser/mixed-content[1]" . ":comment")
+ ("parser/mixed-content[2]" . ":processing-instruction")
+ ("parser/mixed-content[3]" . ":doctype")
+ ("parser/mixed-content[4]" . ":start-element")
+ ("parser/mixed-content[5]" . ":characters")
+ ("parser/mixed-content[6]" . ":characters")
+ ("parser/mixed-content[7]" . ":start-element")
+ ("parser/mixed-content[8]" . ":end-element")
+ ("parser/mixed-content[9]" . ":characters")
+ ("parser/mixed-content[10]" . ":end-element")
+ ("parser/mixed-content[11]" . ":comment")
+ ("parser/mixed-content[12]" . ":end-document"))
