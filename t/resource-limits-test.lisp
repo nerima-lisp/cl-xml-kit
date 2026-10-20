@@ -1,6 +1,6 @@
 (in-package #:cl-xml-kit/test)
 
-;; Defaults from the limit table in docs/design/architecture.md section 3.
+;; Defaults from the limit table in docs/src/architecture.md section 3.
 (describe "resource limits"
   (it-each ((xml-resource-limits-max-input-octets 16777216)
             (xml-resource-limits-max-document-characters 16777216)

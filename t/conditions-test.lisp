@@ -1,7 +1,7 @@
 (in-package #:cl-xml-kit/test)
 
 ;; The parent of each condition, from the inheritance tree in the Conditions part of
-;; docs/design/architecture.md section 4. That tree lists no edit conditions, so
+;; docs/src/architecture.md section 4. That tree lists no edit conditions, so
 ;; their four rows pin the current edit hierarchy as a regression check only.
 (describe "XML conditions"
   (it-each ((xml-input-error xml-kit-error) (xml-decode-error xml-input-error)
