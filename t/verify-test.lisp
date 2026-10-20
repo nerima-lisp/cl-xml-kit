@@ -204,6 +204,29 @@
         (setf result candidate))
       (expect calls :to-equal 1)
       (expect result :to-equal "<a x=\"2\"/>")))
+  (it "uses strict verification when %edit-verify omits :lenient-ordinals"
+    (let ((context (edit-context "<root><item>x</item></root>"))
+          (candidate "<root> <item>x</item></root>")
+          (expected (parse-xml "<root><item>x</item></root>")))
+      (expect
+       (lambda ()
+         (cl-xml-kit::%edit-verify
+          context candidate expected #'identity #'error))
+       :to-signal-xml
+       '(xml-unsupported-edit
+         (xml-edit-error-reason :verification-failed)
+         (xml-edit-error-path "/root")))))
+  (it "uses strict verification when %edit-finish omits :lenient-ordinals"
+    (let ((context (edit-context "<root><item>x</item></root>"))
+          (expected (parse-xml "<root><item>x</item></root>")))
+      (expect
+       (lambda ()
+         (cl-xml-kit::%edit-finish
+          context 6 6 " " expected #'identity #'error))
+       :to-signal-xml
+       '(xml-unsupported-edit
+         (xml-edit-error-reason :verification-failed)
+         (xml-edit-error-path "/root")))))
 
   (it "calls failure once with a reparse refusal"
     (let ((context (edit-context "<a/>"))
