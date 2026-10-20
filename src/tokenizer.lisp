@@ -3,7 +3,9 @@
   (defvar *xml-tokenizer-active* nil)
   (defvar *xml-tokenizer-actual-token-kind* nil)
 
-  (defparameter *xml-tokenizer-parser-tokenizer*
+  (defvar *xml-tokenizer-parser-tokenizer* nil)
+
+  (defun %xml-tokenizer-create-parser-tokenizer ()
     (labels ((starts-with-p (literal text index)
                (let ((end (+ index (length literal))))
                  (and (<= end (length text))
@@ -161,14 +163,18 @@
   (defun %xml-tokenizer-create-cursor (tokenizer)
     (let* ((input (%xml-tokenizer-input tokenizer))
            (limits (%xml-tokenizer-limits tokenizer))
-           (source (%xml-tokenizer-source tokenizer)))
+           (source (%xml-tokenizer-source tokenizer))
+           (parser-tokenizer
+             (or *xml-tokenizer-parser-tokenizer*
+                 (setf *xml-tokenizer-parser-tokenizer*
+                       (%xml-tokenizer-create-parser-tokenizer)))))
       (cl-parser-kit:make-tokenizer-cursor
-       input *xml-tokenizer-parser-tokenizer*
+       input parser-tokenizer
        :max-source-length
        (xml-resource-limits-max-document-characters limits)
        :max-tokens (length input)
        :max-rules
-       (loop for mode in (cl-parser-kit:tokenizer-modes *xml-tokenizer-parser-tokenizer*)
+       (loop for mode in (cl-parser-kit:tokenizer-modes parser-tokenizer)
              sum (length (cdr mode)))
        :max-mode-depth 2
        :on-limit-exceeded
