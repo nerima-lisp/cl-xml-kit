@@ -43,11 +43,10 @@
   value)
 
 (defun make-xml-position (&key source
-                              (offset 0 offset-supplied-p)
-                              (line 1 line-supplied-p)
-                              (column 1 column-supplied-p))
+                              (offset 0)
+                              (line 1)
+                              (column 1))
   "Return an immutable source position with zero-based OFFSET and one-based LINE and COLUMN."
-  (declare (ignorable offset-supplied-p line-supplied-p column-supplied-p))
   (%string-or-nil source "SOURCE")
   (unless (and (integerp offset) (not (minusp offset)))
     (xml-error 'xml-input-error :offset-must-be-non-negative))
@@ -70,10 +69,9 @@
            :identity)))
 
 (defun make-xml-name (&key local-name
-                          (namespace-uri "" namespace-uri-supplied-p)
+                          (namespace-uri "")
                           prefix)
   "Return an immutable expanded XML name; PREFIX is lexical and may be NIL."
-  (declare (ignorable namespace-uri-supplied-p))
   (%string-value local-name "LOCAL-NAME" :nonempty t :no-colon t)
   (%string-value namespace-uri "NAMESPACE-URI")
   (%string-or-nil prefix "PREFIX")

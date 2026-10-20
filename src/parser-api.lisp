@@ -2,14 +2,12 @@
 
 (defun make-xml-parser
     (input &key source-name
-               (resource-limits *default-xml-resource-limits*
-                                resource-limits-supplied-p)
-               (external-entity-policy :reject external-entity-policy-supplied-p))
+               (resource-limits *default-xml-resource-limits*)
+               (external-entity-policy :reject))
   "Create a forward-only parser for XML input.
 
 The input is decoded and line-end normalized here; tokenizing and parsing
 happen one event at a time as the events are taken."
-  (declare (ignorable resource-limits-supplied-p external-entity-policy-supplied-p))
   (unless (or (null source-name) (stringp source-name))
     (xml-error 'xml-input-error :label-must-be-string-or-nil
                :format-arguments ("SOURCE-NAME")))
