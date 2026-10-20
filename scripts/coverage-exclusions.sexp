@@ -74,6 +74,17 @@
  (:path "src/entity-subset.lisp" :kind :expression :operator "DEFUN" :name "PARSE-XML-INTERNAL-SUBSET" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
  (:path "src/nodes.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-POSITION" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
  (:path "src/nodes.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-NAME" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/edit.lisp" :kind :expression :operator "DEFUN" :name "EDIT-XML-APPEND" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/edit.lisp" :kind :expression :operator "DEFUN" :name "EDIT-XML-DELETE" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/edit.lisp" :kind :expression :operator "DEFUN" :name "EDIT-XML-SET" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/format.lisp" :kind :expression :operator "DEFSTRUCT" :name "FORMAT-STATE" :reason "Only literal struct default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/format.lisp" :kind :expression :operator "DEFUN" :name "FORMAT-XML" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/path-resolution.lisp" :kind :expression :operator "DEFUN" :name "SELECT-XML" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/serializer-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-SERIALIZER-STATE" :reason "Only literal struct default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/serializer.lisp" :kind :expression :operator "DEFUN" :name "%WRITE-XML" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/serializer.lisp" :kind :expression :operator "DEFUN" :name "WRITE-XML" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/serializer.lisp" :kind :expression :operator "DEFUN" :name "XML->STRING" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/spans-api.lisp" :kind :expression :operator "DEFUN" :name "SCAN-XML-SPANS" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
 )
 
 
