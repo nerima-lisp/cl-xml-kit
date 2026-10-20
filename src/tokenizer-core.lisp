@@ -48,7 +48,8 @@ supplied, is the exclusive normalized offset after the lexeme."
   (line-start-index 0)
   (tag-open-p nil)
   (eof-returned nil)
-  (space-seen-p nil))
+  (space-seen-p nil)
+  (tag-phase nil))
 
 (defstruct (xml-tokenizer
             (:constructor %make-xml-tokenizer (input source limits))
