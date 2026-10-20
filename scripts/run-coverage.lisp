@@ -115,7 +115,7 @@
       (and (eq (getf entry :kind) :expression)
            (or (member operator
                        '("IN-PACKAGE" "DECLAIM" "DEFPARAMETER" "DEFVAR"
-                                      "DEFCONSTANT" "DEFPACKAGE" "DEFINE-CONDITION" "DEFMACRO"
+                                      "DEFPACKAGE" "DEFINE-CONDITION" "DEFMACRO"
                                       "DEFUN" "DEFSTRUCT")
                        :test #'string=)
                (and (string= operator "EVAL-WHEN")
@@ -246,12 +246,14 @@
               (length (intersection follow-up-keys unique-uncovered :test #'equal))
               (length unique-uncovered))
       entries))
-  (defun coverage-check-constant-default-exclusions (files manifest-path)
+  (defun coverage-check-structural-exclusions (files manifest-path)
     (let* ((entries (coverage-read-form-entries manifest-path))
            (root (cl-xml-kit/script-support:repository-root))
            (checked 0))
       (dolist (entry entries)
-        (when (member (getf entry :operator) '("DEFUN" "DEFSTRUCT")
+        (when (member (getf entry :operator)
+                      '("DEFUN" "DEFSTRUCT" "DEFPARAMETER" "DEFVAR"
+                        "DEFINE-CONDITION" "DEFMACRO" "EVAL-WHEN")
                       :test #'string=)
           (let* ((path (getf entry :path))
                  (file (find-if
@@ -261,7 +263,7 @@
                                     (getf candidate :pathname) root)))
                         files)))
             (unless file
-              (error "Coverage default exclusion has no measured file: ~S"
+              (error "Coverage structural exclusion has no measured file: ~S"
                      (coverage-form-entry-key entry)))
             (let ((filename (namestring (getf file :pathname))))
               (multiple-value-bind (counts states source)
@@ -284,14 +286,14 @@
                                   (coverage-form-entry-key entry)))
                          (getf file :uncovered-forms))))
                   (unless owner
-                    (error "Coverage default exclusion has no source owner: ~S"
+                    (error "Coverage structural exclusion has no source owner: ~S"
                            (coverage-form-entry-key entry)))
                   (unless (coverage-owner-exclusion-allowed-p
                            owner source uncovered)
-                    (error "Coverage exclusion is not limited to literal defaults: ~S"
+                    (error "Coverage exclusion is not structurally safe: ~S"
                            (coverage-form-entry-key entry)))
                   (incf checked)))))))
-      (format t "coverage-constant-default-exclusions checked=~D~%" checked)))
+      (format t "coverage-structural-exclusions checked=~D~%" checked)))
   (defun coverage-require-files-measured (source-files statistics)
     (let ((measured (mapcar (lambda (file) (truename (getf file :pathname)))
                             statistics)))
@@ -367,4 +369,4 @@
           (coverage-emit-statistics statistics minimum-expression minimum-branch)
           (progn
             (coverage-check-form-accounting files exclusion-path)
-            (coverage-check-constant-default-exclusions files exclusion-path)))))))
+            (coverage-check-structural-exclusions files exclusion-path)))))))

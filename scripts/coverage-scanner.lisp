@@ -182,41 +182,147 @@
                                  (and (or (and (eq option :type)
                                                (or (symbolp value)
                                                    (and (consp value)
-                                                        (coverage-scanner-literal-datum-p value))))
+                                                        (coverage-scanner-literal-datum-p
+                                                         value))))
                                           (and (eq option :read-only)
-                                               (member value '(nil t))))
+                                               (or (null value) (eq value t))))
                                       (slot-options-p (cddr options))))))))
       (let* ((elements (coverage-scanner-list-elements source owner))
-             (slots (cddr elements))
-             (spans nil))
+             (slots (cddr elements)))
         (when (and slots (stringp (getf (first slots) :form)))
           (setf slots (rest slots)))
-        (dolist (slot slots)
-          (let* ((form (getf slot :form))
-                 (parts (coverage-scanner-list-elements source slot)))
-            (when (and (consp form)
-                       (symbolp (first form))
-                       (>= (length form) 2)
-                       (coverage-scanner-literal-constant-p (second form))
-                       (second parts)
-                       (slot-options-p (cddr parts)))
-              (push (cons (getf slot :start) (getf slot :end))
-                    spans))))
-        spans)))
+        (loop for slot in slots
+              for form = (getf slot :form)
+              for parts = (coverage-scanner-list-elements source slot)
+              when (and (coverage-scanner-proper-list-p form)
+                        (consp form)
+                        (symbolp (first form))
+                        (>= (length form) 2)
+                        (coverage-scanner-literal-constant-p (second form))
+                        (second parts)
+                        (slot-options-p (cddr parts)))
+              collect (cons (getf slot :start) (getf slot :end))))))
 
-  (defun coverage-owner-exclusion-allowed-p (owner source uncovered-forms)
-    (let* ((form (getf owner :form))
-           (operator (coverage-scanner-form-operator form))
-           (spans (cond
-                    ((and operator (string= operator "DEFUN"))
-                     (coverage-scanner-defun-default-spans source owner))
-                    ((and operator (string= operator "DEFSTRUCT"))
-                     (coverage-scanner-defstruct-default-spans source owner)))))
-      (and spans
+  (defun coverage-scanner-proper-list-p (form)
+    (handler-case
+        (integerp (list-length form))
+      (error () nil)))
+
+  (defun coverage-scanner-defparameter-shape-p (form)
+    (and (coverage-scanner-proper-list-p form)
+         (<= 3 (length form) 4)
+         (symbolp (second form))
+         (coverage-scanner-literal-constant-p (third form))
+         (or (= (length form) 3)
+             (stringp (fourth form)))))
+
+  (defun coverage-scanner-defvar-shape-p (form)
+    (and (coverage-scanner-proper-list-p form)
+         (<= 2 (length form) 4)
+         (symbolp (second form))
+         (or (= (length form) 2)
+             (and (coverage-scanner-literal-constant-p (third form))
+                  (or (= (length form) 3)
+                      (stringp (fourth form)))))))
+
+  (defun coverage-scanner-condition-slot-options-p (options)
+    (and (coverage-scanner-proper-list-p options)
+         (evenp (length options))
+         (loop for (key value) on options by #'cddr
+               always
+               (case key
+                 (:initarg (keywordp value))
+                 (:initform (coverage-scanner-literal-constant-p value))
+                 (:reader (symbolp value))
+                 (:documentation (stringp value))
+                 (otherwise nil)))))
+
+  (defun coverage-scanner-condition-slot-p (slot)
+    (and (coverage-scanner-proper-list-p slot)
+         slot
+         (symbolp (first slot))
+         (coverage-scanner-condition-slot-options-p (rest slot))))
+
+  (defun coverage-scanner-condition-option-p (option)
+    (and (coverage-scanner-proper-list-p option)
+         (= (length option) 2)
+         (eq (first option) :documentation)
+         (stringp (second option))))
+
+  (defun coverage-scanner-define-condition-shape-p (form)
+    (and (coverage-scanner-proper-list-p form)
+         (>= (length form) 4)
+         (symbolp (second form))
+         (coverage-scanner-proper-list-p (third form))
+         (every #'symbolp (third form))
+         (coverage-scanner-proper-list-p (fourth form))
+         (every #'coverage-scanner-condition-slot-p (fourth form))
+         (every #'coverage-scanner-condition-option-p (cddddr form))))
+
+  (defun coverage-scanner-eval-when-defparameter-shape-p (form)
+    (and (coverage-scanner-proper-list-p form)
+         (= (length form) 3)
+         (coverage-scanner-proper-list-p (second form))
+         (second form)
+         (every (lambda (situation)
+                  (member situation
+                          '(:compile-toplevel :load-toplevel :execute)))
+                (second form))
+         (coverage-scanner-defparameter-shape-p (third form))))
+
+  (progn
+  (progn
+  (defun coverage-scanner-owner-contained-uncovered-p (owner uncovered-forms)
+    (let ((owner-start (getf owner :start))
+          (owner-end (getf owner :end)))
+      (and (integerp owner-start)
+           (integerp owner-end)
            uncovered-forms
            (every (lambda (uncovered)
-                    (and (eq (getf uncovered :kind) :expression)
-                         (member (cons (getf uncovered :start)
-                                       (getf uncovered :end))
-                                 spans :test #'equal)))
-                  uncovered-forms)))))
+                    (let ((start (getf uncovered :start))
+                          (end (getf uncovered :end)))
+                      (and (eq (getf uncovered :kind) :expression)
+                           (integerp start)
+                           (integerp end)
+                           (<= owner-start start)
+                           (<= end owner-end))))
+                  uncovered-forms))))
+  (defun coverage-scanner-eval-when-uncovered-p (owner source uncovered-forms)
+    (declare (ignore source))
+    (and (coverage-scanner-eval-when-defparameter-shape-p
+          (getf owner :form))
+         (coverage-scanner-owner-contained-uncovered-p
+          owner uncovered-forms))))
+  (defun coverage-owner-exclusion-allowed-p (owner source uncovered-forms)
+  (let* ((form (getf owner :form))
+         (operator (coverage-scanner-form-operator form))
+         (spans (cond
+                  ((and operator (string= operator "DEFUN"))
+                   (coverage-scanner-defun-default-spans source owner))
+                  ((and operator (string= operator "DEFSTRUCT"))
+                   (coverage-scanner-defstruct-default-spans source owner))))
+         (default-only-p
+           (and spans
+                uncovered-forms
+                (every (lambda (uncovered)
+                         (and (eq (getf uncovered :kind) :expression)
+                              (member (cons (getf uncovered :start)
+                                            (getf uncovered :end))
+                                      spans :test (function equal))))
+                       uncovered-forms)))
+         (declaration-contained-p
+           (coverage-scanner-owner-contained-uncovered-p
+            owner uncovered-forms)))
+    (or default-only-p
+        (and operator
+             (string= operator "EVAL-WHEN")
+             (coverage-scanner-eval-when-uncovered-p
+              owner source uncovered-forms))
+        (and declaration-contained-p
+             (cond
+               ((and operator (string= operator "DEFPARAMETER"))
+                (coverage-scanner-defparameter-shape-p form))
+               ((and operator (string= operator "DEFVAR"))
+                (coverage-scanner-defvar-shape-p form))
+               ((and operator (string= operator "DEFINE-CONDITION"))
+                (coverage-scanner-define-condition-shape-p form)))))))))
