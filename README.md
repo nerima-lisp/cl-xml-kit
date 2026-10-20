@@ -24,8 +24,8 @@ runtime dependencies available. Without Nix, install `cl-codec-kit` and
 `cl-parser-kit` with your Common Lisp dependency manager, or check out their
 sources and add the directories containing `cl-codec-kit.asd` and
 `cl-parser-kit.asd` to `asdf:*central-registry*` before loading the system. The
-snippet adds this checkout to the same registry. In either setup, run it from
-the repository root so `truename "./"` points to this checkout.
+snippet adds this checkout to the same registry. Run the snippet from the
+repository root so `truename "./"` points to this checkout.
 
 ```lisp
 (require :asdf)
@@ -37,9 +37,10 @@ the repository root so `truename "./"` points to this checkout.
 
 ## Documentation
 
+- [API reference](docs/src/api.md) lists every exported symbol, signature, return value, callback contract, and condition.
 - [Architecture](docs/src/architecture.md) describes the parser, data model, APIs, and resource controls.
 - [Migration to 2.0.0](docs/src/migration.md) lists the public API signature changes.
-- [Benchmark guide](benchmark/README.md) covers the benchmark and XMLConf catalog tools.
+- [Benchmark guide](benchmark/README.md) covers benchmark runs and the XMLConf, coverage, and mutation checks.
 
 ## Development
 

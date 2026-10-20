@@ -6,7 +6,7 @@ The 2.0.0 API changes five exported functions to take success and failure callba
 
 The pre-CPS side is the [untagged source snapshot `a659f4bc06a75634bf6698954ff17a6a32d88f98`](https://github.com/nerima-lisp/cl-xml-kit/tree/a659f4bc06a75634bf6698954ff17a6a32d88f98). Its ASDF system declares version `1.0.0`, but that snapshot is not a published release or tag. The repository has no published 1.x release or tag for a release-to-release comparison.
 
-The 2.0.0 target signatures below match the [source snapshot at commit `8750e10ea265ab3c937982d6db2a62757dae8bc0`](https://github.com/nerima-lisp/cl-xml-kit/tree/8750e10ea265ab3c937982d6db2a62757dae8bc0). Treat this as a source-to-source comparison, not a comparison between released versions.
+The 2.0.0 target signatures below match the [source snapshot at commit `2a7b4e011053edd444baae181f26e0e958720349`](https://github.com/nerima-lisp/cl-xml-kit/tree/2a7b4e011053edd444baae181f26e0e958720349). Treat this as a source-to-source comparison, not a comparison between released versions.
 
 ## Export changes
 
@@ -21,7 +21,7 @@ Each function adds positional `success` and `failure` callbacks after its requir
 - Pre-CPS: `(source path &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 - 2.0.0 target: `(source path success failure &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 
-#### Pre-CPS example: untagged 1.0.0 source snapshot
+#### Pre-CPS example
 
 ```lisp
 (asdf:load-system "cl-xml-kit")
@@ -47,7 +47,7 @@ Each function adds positional `success` and `failure` callbacks after its requir
 - Pre-CPS: `(source path value &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 - 2.0.0 target: `(source path value success failure &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 
-#### Pre-CPS example: untagged 1.0.0 source snapshot
+#### Pre-CPS example
 
 ```lisp
 (asdf:load-system "cl-xml-kit")
@@ -73,7 +73,7 @@ Each function adds positional `success` and `failure` callbacks after its requir
 - Pre-CPS: `(source path &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 - 2.0.0 target: `(source path success failure &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 
-#### Pre-CPS example: untagged 1.0.0 source snapshot
+#### Pre-CPS example
 
 ```lisp
 (asdf:load-system "cl-xml-kit")
@@ -99,7 +99,7 @@ Each function adds positional `success` and `failure` callbacks after its requir
 - Pre-CPS: `(source path fragment &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 - 2.0.0 target: `(source path fragment success failure &key (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 
-#### Pre-CPS example: untagged 1.0.0 source snapshot
+#### Pre-CPS example
 
 ```lisp
 (asdf:load-system "cl-xml-kit")
@@ -125,7 +125,7 @@ Each function adds positional `success` and `failure` callbacks after its requir
 - Pre-CPS: `(source &key (indent 2) (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 - 2.0.0 target: `(source success failure &key (indent 2) (resource-limits *default-xml-resource-limits*) (external-entity-policy :reject))`
 
-#### Pre-CPS example: untagged 1.0.0 source snapshot
+#### Pre-CPS example
 
 ```lisp
 (asdf:load-system "cl-xml-kit")

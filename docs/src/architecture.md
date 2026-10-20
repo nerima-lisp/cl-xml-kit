@@ -1,4 +1,4 @@
-# cl-xml-kit architecture and API
+# cl-xml-kit architecture
 
 ## 1. Scope and processing model
 
@@ -18,6 +18,8 @@ The tokenizer uses `cl-parser-kit` modes for XML content and tag syntax. Content
 
 The source-preserving operations are `select-xml`, `edit-xml-set`, `edit-xml-delete`, `edit-xml-append`, and `format-xml`. They combine parsed structure with source spans. Each operation takes `success` and `failure` callbacks. The operation calls `success` once with the result or `failure` once with the condition, then returns the values from the callback it called.
 
+See the [API reference](api.md) for every exported symbol, its lambda list, return values, callback arguments, and conditions.
+
 The pull reader emits these event types. Fields not listed for an event are `nil`.
 
 | Type | Meaning | Fields |
@@ -32,15 +34,13 @@ The pull reader emits these event types. Fields not listed for an event are `nil
 | `:skipped-external-entity` | An external entity reference was skipped | name, position, external-p |
 | `:end-document` | The document has no more events | position |
 
-The default external-resource policy is `:reject`. The `:skip` policy reports skipped references as `:skipped-external-entity` events and does not insert external replacement text.
-
 ## 2. XML and namespace conformance boundary
 
 The parser follows XML 1.0 Fifth Edition and Namespaces in XML 1.0 Third Edition. It checks XML well-formedness and namespace constraints, but it does not perform DTD validity checking or apply declarations from external subsets.
 
 Names use the XML 1.0 name productions. The parser resolves element and attribute names to namespace URI, local name, and lexical prefix. The default namespace applies to unprefixed elements, not to unprefixed attributes. It detects duplicate attributes by expanded name.
 
-Input line endings convert CRLF and CR to LF before grammar parsing. Attribute values undergo XML whitespace and reference normalization. A parsed DOM coalesces adjacent character data into text nodes.
+Input line endings convert CRLF and CR to LF before grammar parsing. Attribute values undergo XML whitespace and reference normalization.
 
 ### Encoding profile
 
@@ -52,9 +52,7 @@ Octet input supports UTF-8, with or without a BOM, and UTF-16 when a BOM selects
 
 The parser never reads an external DTD or external general or parameter entity. Under the default `:reject` policy, an external reference signals `xml-external-resource-disabled`. Under `:skip`, the parser omits external replacement text and reports the skipped reference to event consumers. No resolver callback or network access is available through the parsing API.
 
-Resource limits are configured with an immutable `xml-resource-limits` value. The default values are:
-
-`max-input-octets` applies to octet-vector input. Strings and character streams are bounded by `max-document-characters` after line-end normalization.
+Resource limits are configured with an immutable `xml-resource-limits` value. The table lists the defaults. `max-input-octets` applies to octet-vector input; strings and character streams use `max-document-characters` after line-end normalization.
 
 | Limit | Default | Counts |
 | --- | ---: | --- |
@@ -112,7 +110,11 @@ The ASDF systems declare these direct dependencies:
 | `cl-xml-kit/test` | `cl-xml-kit`, `cl-weave` |
 | `cl-xml-kit/benchmark` | `cl-xml-kit`, `cl-weave`, `cl-host-kit` |
 
-Repository scripts that use `scripts/script-support.lisp` also require `cl-host-kit`. The runtime, test, and benchmark component order is declared in `cl-xml-kit.asd`.
+Repository scripts that use `scripts/script-support.lisp` also require `cl-host-kit`. The ASDF dependencies and component load order are declared in `cl-xml-kit.asd`.
+
+## Tests and XMLConf
+
+The ASDF test system runs the `cl-weave` specs and fails when a spec fails. XMLConf reports catalog classifications (`accepted`, `rejected`, `skipped`, and `excluded`) separately from execution results (`passed`, `failed`, and `skipped`). Catalog exclusions are listed in `scripts/xmlconf-exclusions.sexp`; they are not-well-formed cases whose only failure is inside an external entity, which the parser does not read. Execution skips are cases outside the parser profile. The flake check requires the expected totals, zero failures, and no unmatched exclusions.
 
 ## References
 
