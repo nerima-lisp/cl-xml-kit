@@ -20,6 +20,7 @@
                   (funcall reader (make-xml-resource-limits)))
             :to-equal (list expected expected)))
 
+  ;; Each row rebuilds the full fixture so every reader is checked with all limits configured.
   (it-each ((xml-resource-limits-max-input-octets 1)
             (xml-resource-limits-max-document-characters 2)
             (xml-resource-limits-max-output-characters 3)
