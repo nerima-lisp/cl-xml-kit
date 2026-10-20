@@ -23,6 +23,13 @@
       (write-xml (node-from-spec '(:element "a" :children ((:element "b")))) stream
                  :pretty-print t :indent 1)
       (expect (get-output-stream-string stream) :to-equal (format nil "<a>~% <b/>~%</a>"))))
+  (it "writes nested elements compactly by default through write-xml"
+    (let ((stream (make-string-output-stream)))
+      (write-xml (node-from-spec '(:element "root" :children ((:element "child"))))
+                 stream)
+      (expect (get-output-stream-string stream)
+              :to-equal "<root><child/></root>")))
+
   (it "uses two-space indentation by default through public APIs"
     (let* ((node (node-from-spec
                   (list :element "root"
