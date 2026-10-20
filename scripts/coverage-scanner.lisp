@@ -211,8 +211,7 @@
                     ((and operator (string= operator "DEFUN"))
                      (coverage-scanner-defun-default-spans source owner))
                     ((and operator (string= operator "DEFSTRUCT"))
-                     (coverage-scanner-defstruct-default-spans source owner))))
-           (uncovered-forms (copy-list uncovered-forms)))
+                     (coverage-scanner-defstruct-default-spans source owner)))))
       (and spans
            uncovered-forms
            (every (lambda (uncovered)

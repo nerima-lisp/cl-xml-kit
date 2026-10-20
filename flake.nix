@@ -165,6 +165,27 @@
             timeoutSeconds = 120;
           };
 
+          coverageScannerFixturesCheck = ctx.cl.mkCommandCheck {
+            drv = ctx.package;
+            name = "cl-xml-kit-coverage-scanner-fixtures";
+            command = [
+              "${ctx.pkgs.bash}/bin/bash"
+              "-e"
+              "-u"
+              "-o"
+              "pipefail"
+              "-c"
+              ''
+                ${ctx.pkgs.lib.getExe ctx.pkgs.sbcl} --script scripts/test-coverage-scanner.lisp | tee coverage-scanner-fixtures.txt
+              ''
+            ];
+            artifacts = [ "coverage-scanner-fixtures.txt" ];
+            validationCommands = [
+              "grep -Fx -- 'coverage-scanner-fixtures accepted=2 rejected=6' coverage-scanner-fixtures.txt"
+            ];
+            timeoutSeconds = 120;
+          };
+
           parserKitLoadCheck = ctx.cl.mkCommandCheck {
             drv = ctx.package;
             name = "cl-xml-kit-parser-kit-load";
@@ -214,6 +235,7 @@
         {
           checks.xmlconf = xmlconfCheck;
           checks.coverage = coverageCheck;
+          checks.coverage-scanner-fixtures = coverageScannerFixturesCheck;
           checks.parser-kit-load = parserKitLoadCheck;
           apps.bench = {
             type = "app";

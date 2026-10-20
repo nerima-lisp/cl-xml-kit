@@ -55,15 +55,44 @@
                (list (coverage-fixture-expression
                       source "(token (gensym \"token\"))"))))
         (check-fixture "dynamic default" nil owner source uncovered))
-      (let* ((source
-               "(defun rejected-body-expression (&key (policy :reject)) (error \"uncovered\"))")
-             (owner (coverage-fixture-owner source))
-             (uncovered
-               (list (coverage-fixture-expression source "(policy :reject)")
-                     (coverage-fixture-expression
-                      source "(error \"uncovered\")"))))
-        (check-fixture "uncovered body" nil owner source uncovered)))
-    (unless (and (= accepted 2) (= rejected 2))
+      (progn
+        (let* ((source
+                 "(defun rejected-body-expression (&key (policy :reject)) (error \"uncovered\"))")
+               (owner (coverage-fixture-owner source))
+               (uncovered
+                 (list (coverage-fixture-expression
+                        source "(error \"uncovered\")"))))
+          (check-fixture "uncovered body" nil owner source uncovered))
+        (let* ((source
+                 "(defun rejected-special-default (&key (resource-limits *default-xml-resource-limits*)) resource-limits)")
+               (owner (coverage-fixture-owner source))
+               (uncovered
+                 (list (coverage-fixture-expression
+                        source "(resource-limits *default-xml-resource-limits*)"))))
+          (check-fixture "special variable default" nil owner source uncovered))
+        (let* ((source
+                 "(defstruct rejected-dynamic-slot (policy (gensym)))")
+               (owner (coverage-fixture-owner source))
+               (uncovered
+                 (list (coverage-fixture-expression
+                        source "(policy (gensym))"))))
+          (check-fixture "dynamic slot initform" nil owner source uncovered))
+        (let* ((source
+                 "(defun rejected-branch-kind (&key (policy :reject)) policy)")
+               (owner (coverage-fixture-owner source))
+               (uncovered
+                 (coverage-fixture-expression source "(policy :reject)")))
+          (setf (getf uncovered :kind) :branch)
+          (check-fixture "branch kind" nil owner source (list uncovered)))
+        (let* ((source
+                 "(defun rejected-mixed-uncovered (&key (policy :reject)) (error \"uncovered\"))")
+               (owner (coverage-fixture-owner source))
+               (uncovered
+                 (list (coverage-fixture-expression source "(policy :reject)")
+                       (coverage-fixture-expression
+                        source "(error \"uncovered\")"))))
+          (check-fixture "mixed default and body" nil owner source uncovered))))
+    (unless (and (= accepted 2) (= rejected 6))
       (error "Coverage scanner fixture counts differ: accepted=~D rejected=~D"
              accepted rejected))
     (format t "coverage-scanner-fixtures accepted=~D rejected=~D~%"
