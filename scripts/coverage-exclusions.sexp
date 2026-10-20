@@ -68,6 +68,7 @@
  (:path "src/tokenizer-tags.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
  (:path "src/tokenizer.lisp" :kind :expression :operator "DEFVAR" :name "*XML-TOKENIZER-ACTIVE*" :reason "This load-time declaration establishes the special matcher binding; token matching is exercised through tokenizer tests.")
  (:path "src/tokenizer.lisp" :kind :expression :operator "DEFVAR" :name "*XML-TOKENIZER-ACTUAL-TOKEN-KIND*" :reason "This load-time declaration establishes the token-kind handoff binding; token construction is exercised through tokenizer tests.")
+ (:path "src/tokenizer.lisp" :kind :expression :operator "DEFVAR" :name "*XML-TOKENIZER-TOKEN-POSITION*" :reason "This load-time declaration establishes the token-position override; token positions are exercised through tokenizer tests.")
  (:path "src/tokenizer.lisp" :kind :expression :operator "DEFVAR" :name "*XML-TOKENIZER-PARSER-TOKENIZER*" :reason "This load-time declaration establishes the parser-tokenizer cache binding; %xml-tokenizer-create-cursor populates it when the first cursor is built.")
  (:path "src/tokenizer.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
  (:path "src/verify.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
