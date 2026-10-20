@@ -37,51 +37,63 @@
             (t (push (list source path result) problems))))))
     (expect problems :to-equal nil)))
 
-(it-property "sets generated text or refuses mixed content"
-    ((source (gen-member (edit-documents-without-empty-element-reference))))
+(it "sets generated text or refuses mixed content"
   (let ((problems nil)
+        (success-count 0)
+        (refusal-count 0)
         (value (spans-lines "t&<>]]>~%x")))
-    (dolist (match (edit-element-matches source))
-      (let* ((path (concatenate 'string (xml-match-path match) "/text()"))
-             (result (edit-refusal-or-result
-                      (lambda () (edit-apply :set source path value)))))
-        (cond
-          ((eq result :mixed-content))
-          ((and (stringp result)
-                (edit-within-p source result (xml-match-start match) (xml-match-end match))
-                (equal (xml-match-value (first (path-select result path))) value)))
-          (t (push (list source path result) problems)))))
-    (expect problems :to-equal nil)))
+    (dolist (source (edit-documents-without-empty-element-reference))
+      (dolist (match (edit-element-matches source))
+        (let* ((path (concatenate 'string (xml-match-path match) "/text()"))
+               (result (edit-refusal-or-result
+                        (lambda () (edit-apply :set source path value)))))
+          (cond
+            ((eq result :mixed-content)
+             (incf refusal-count))
+            ((and (stringp result)
+                  (edit-within-p source result (xml-match-start match) (xml-match-end match))
+                  (equal (xml-match-value (first (path-select result path))) value))
+             (incf success-count))
+            (t (push (list source path result) problems))))))
+    (expect problems :to-equal nil)
+    (expect (plusp success-count) :to-be-truthy)
+    (expect (plusp refusal-count) :to-be-truthy)))
 
-(it-property "replaces generated nested elements without changing surrounding source"
-    ((source (gen-member (edit-documents-without-empty-element-reference))))
+(it "replaces generated nested elements without changing surrounding source"
   (let ((problems nil)
+        (nested-count 0)
         (fragment (spans-lines " <zz a=\"1\">~%t</zz>~%")))
-    (dolist (match (edit-element-matches source))
-      (when (find #\/ (xml-match-path match) :start 1)
-        (let ((result (edit-apply :set source (xml-match-path match) fragment)))
-          (unless (and (edit-within-p source result
-                                     (xml-match-start match) (xml-match-end match))
-                       (string= "<zz a=\"1\">" result
-                                :start2 (xml-match-start match)
-                                :end2 (+ (xml-match-start match) 10)))
-            (push (list source (xml-match-path match) result) problems)))))
-    (expect problems :to-equal nil)))
+    (dolist (source (edit-documents-without-empty-element-reference))
+      (dolist (match (edit-element-matches source))
+        (when (find #\/ (xml-match-path match) :start 1)
+          (incf nested-count)
+          (let ((result (edit-apply :set source (xml-match-path match) fragment)))
+            (unless (and (edit-within-p source result
+                                       (xml-match-start match) (xml-match-end match))
+                         (string= "<zz a=\"1\">" result
+                                  :start2 (xml-match-start match)
+                                  :end2 (+ (xml-match-start match) 10)))
+              (push (list source (xml-match-path match) result) problems))))))
+    (expect problems :to-equal nil)
+    (expect (plusp nested-count) :to-be-truthy)))
 
-(it-property "deletes each generated nested element only within its source range"
-    ((source (gen-member (edit-documents-without-empty-element-reference))))
-  (let ((problems nil))
-    (dolist (match (edit-element-matches source))
-      (when (find #\/ (xml-match-path match) :start 1)
-        (let ((result (edit-apply :delete source (xml-match-path match) nil)))
-          (unless (and (edit-within-p source result
-                                     (cl-xml-kit::%edit-removal-start
-                                      source (xml-match-start match))
-                                     (xml-match-end match))
-                       (>= (- (length source) (length result))
-                           (- (xml-match-end match) (xml-match-start match))))
-            (push (list source (xml-match-path match) result) problems)))))
-    (expect problems :to-equal nil)))
+(it "deletes each generated nested element only within its source range"
+  (let ((problems nil)
+        (nested-count 0))
+    (dolist (source (edit-documents-without-empty-element-reference))
+      (dolist (match (edit-element-matches source))
+        (when (find #\/ (xml-match-path match) :start 1)
+          (incf nested-count)
+          (let ((result (edit-apply :delete source (xml-match-path match) nil)))
+            (unless (and (edit-within-p source result
+                                       (cl-xml-kit::%edit-removal-start
+                                        source (xml-match-start match))
+                                       (xml-match-end match))
+                         (>= (- (length source) (length result))
+                             (- (xml-match-end match) (xml-match-start match))))
+              (push (list source (xml-match-path match) result) problems))))))
+    (expect problems :to-equal nil)
+    (expect (plusp nested-count) :to-be-truthy)))
 
 (it-property "appends to every element in generated documents without changing surrounding source"
     ((source (gen-member (edit-documents-without-empty-element-reference))))

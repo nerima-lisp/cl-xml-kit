@@ -13,9 +13,17 @@ A SELECT-XML condition propagates to the caller."
 
 (defun path-select (source path &rest options)
   "Return the matches selected by PATH, or signal the condition delivered on failure."
-  (cl-weave:with-continuation-result (matches success)
-      (apply #'select-xml source path #'success #'error options)
-    matches))
+  (let ((success-calls 0))
+    (let ((matches
+           (cl-weave:with-continuation-result (matches success)
+               (apply #'select-xml source path
+                      (lambda (selected)
+                        (incf success-calls)
+                        (funcall #'success selected))
+                      #'error options)
+             matches)))
+      (expect success-calls :to-equal 1)
+      matches)))
 
 (defun path-slices (source path)
   "Return the text of SOURCE that each match of PATH spans; a SELECT-XML condition propagates."
