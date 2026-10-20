@@ -87,7 +87,7 @@
                         (:after-quote
                          (%xml-tokenizer-next-attribute-name tokenizer t))
                         (:end-after-name
-                         (%xml-tokenizer-next-end-tag-close tokenizer))))))
+                         (%xml-tokenizer-next-end-tag-close tokenizer)))))
                   (setf *xml-tokenizer-token-position*
                         (%xml-tokenizer-current-position tokenizer))
                   (multiple-value-bind (next-phase actual-kind value start end)
@@ -123,7 +123,7 @@
                     (declare (ignore start))
                     (setf (%xml-tokenizer-state-tag-phase state) next-phase
                           *xml-tokenizer-actual-token-kind* actual-kind)
-                    (values t (- end index) nil value)))))
+                    (values t (- end index) nil value))))))
            (tag-close-rule ()
              (cl-parser-kit:make-token-rule
               :type :xml-tag-token
