@@ -21,7 +21,7 @@ each reduced to a value a literal row can state."
         (and (xml-event-position event) (xml-position-offset (xml-event-position event)))
         (xml-event-external-p event)))
 
-;; The fields each type keeps, from the event table in docs/design/architecture.md
+;; The fields each type keeps, from the event table in docs/src/architecture.md
 ;; section 1; the external flag is true only for a skipped external entity, as
 ;; XML-EVENT-EXTERNAL-P documents. Columns: name attributes text target position flag.
 (describe "XML events"
