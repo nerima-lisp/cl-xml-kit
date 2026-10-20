@@ -121,4 +121,17 @@
             :to-signal-xml `(xml-resource-limit-exceeded
                              (xml-resource-limit-exceeded-kind ,kind)
                              (xml-resource-limit-exceeded-limit ,limit)
-                             (xml-resource-limit-exceeded-value ,value)))))
+                             (xml-resource-limit-exceeded-value ,value))))
+
+  (it "reports the first over-limit position when constructing a tokenizer"
+    (expect (lambda ()
+              (cl-xml-kit::make-xml-tokenizer
+               (format nil "ab~Ccd" #\Linefeed)
+               :source "tokenizer.xml"
+               :limits (make-xml-resource-limits :max-document-characters 4)))
+            :to-signal-xml '(xml-resource-limit-exceeded
+                             (xml-resource-limit-exceeded-kind :max-document-characters)
+                             (xml-resource-limit-exceeded-value 5)
+                             (xml-resource-limit-exceeded-limit 4)
+                             (xml-condition-source "tokenizer.xml")
+                             (condition-place ("tokenizer.xml" 4 2 2))))))

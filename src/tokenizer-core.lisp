@@ -86,11 +86,26 @@ cursor, so repeated calls consume the input in order."
   (check-argument limits xml-resource-limits-p xml-input-error
                   :label-must-be-resource-limits
                   :format-arguments ("TOKENIZER LIMITS"))
-  (let ((tokenizer (%make-xml-tokenizer
-                    (copy-seq input) (and source (copy-seq source)) limits)))
-    (setf (%xml-tokenizer-cursor tokenizer)
-          (%xml-tokenizer-create-cursor tokenizer))
-    tokenizer))
+  (let* ((input-length (length input))
+         (limit (xml-resource-limits-max-document-characters limits)))
+    (when (> input-length limit)
+      (let ((source-copy (and source (copy-seq source)))
+            (line 1)
+            (column 1))
+        (loop for index from 0 below limit
+              for character = (char input index)
+              do (if (char= character #\Linefeed)
+                     (setf line (1+ line) column 1)
+                     (incf column)))
+        (%xml-tokenizer-limit-fail-at
+         source-copy :max-document-characters input-length limit
+         (make-xml-position :source source-copy :offset limit
+                            :line line :column column))))
+    (let ((tokenizer (%make-xml-tokenizer
+                      (copy-seq input) (and source (copy-seq source)) limits)))
+      (setf (%xml-tokenizer-cursor tokenizer)
+            (%xml-tokenizer-create-cursor tokenizer))
+      tokenizer)))
 
 (defun xml-tokenizer-input (tokenizer)
   "Return a fresh copy of the tokenizer's normalized input."
@@ -120,10 +135,13 @@ cursor, so repeated calls consume the input in order."
                                       &optional
                                         (position
                                           (%xml-tokenizer-current-position tokenizer)))
+  (%xml-tokenizer-limit-fail-at
+   (%xml-tokenizer-source tokenizer) kind value limit position))
+(defun %xml-tokenizer-limit-fail-at (source kind value limit position)
   (error 'xml-resource-limit-exceeded
          :message (xml-message :resource-limit-exceeded-values kind value limit)
          :position position
-         :source (%xml-tokenizer-source tokenizer)
+         :source source
          :kind kind
          :value value
          :limit limit))

@@ -177,7 +177,6 @@
 
 (defun %xml-tokenizer-create-cursor (tokenizer)
   (let* ((input (%xml-tokenizer-input tokenizer))
-         (limits (%xml-tokenizer-limits tokenizer))
          (source (%xml-tokenizer-source tokenizer))
          (parser-tokenizer
            (or *xml-tokenizer-parser-tokenizer*
@@ -185,21 +184,11 @@
                      (%xml-tokenizer-create-parser-tokenizer)))))
     (cl-parser-kit:make-tokenizer-cursor
      input parser-tokenizer
-     :max-source-length
-     (xml-resource-limits-max-document-characters limits)
      :max-tokens (length input)
      :max-rules
      (loop for mode in (cl-parser-kit:tokenizer-modes parser-tokenizer)
            sum (length (cdr mode)))
      :max-mode-depth 2
-     :on-limit-exceeded
-     (lambda (kind limit value offset line column)
-       (ecase kind
-         (:source-length
-          (%xml-tokenizer-limit-fail
-           tokenizer :max-document-characters value limit
-           (make-xml-position :source source :offset offset :line line
-                              :column column)))))
      :token-constructor
      (lambda (kind text value start end line column)
        (declare (ignore text))
