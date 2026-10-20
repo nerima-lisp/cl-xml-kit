@@ -8,6 +8,11 @@
                           '(:element "root" :attributes ((:attribute "value" "a\"&<>"))
                             :children ("a&<]]>\""))))
             :to-equal "<root value=\"a&quot;&amp;&lt;&gt;\">a&amp;&lt;]]&gt;\"</root>"))
+  (it "classifies characters that need markup escaping"
+    (expect
+     (mapcar (function cl-xml-kit::%markup-character-p)
+             '(#\& #\< #\> #\" #\Tab #\Newline #\Return #\a #\'))
+     :to-equal '(t t t t t t t nil nil)))
 
   (it-each (("a&b" "a&amp;b")
             ("a<b" "a&lt;b")
@@ -36,7 +41,7 @@
             ("a>b" "a>b" "a&gt;b")
             ("q\"'" "q\"'" "q&quot;'")
             ("TAB LF CR" #.(coerce '(#\Tab #\Newline #\Return) 'string) "&#9;&#10;&#13;"))
-      "writes the text ~A~* in canonical form as ~S"
+      "writes canonical text ~A~* as ~S"
       (label data expected)
     (declare (ignore label))
     (expect (xml->canonical-string (make-xml-text :data data)) :to-equal expected))
@@ -66,6 +71,28 @@
                             (make-xml-text
                              :data (coerce '(#\> #\" #\Tab #\Newline #\Return) 'string)))
                            "&gt;&quot;&#9;&#10;&#13;"))))))
+      (expect-not results :to-be nil)
+      (expect (getf (assert-mutation-score results 1.0) :score) :to-equal 1.0)))
+  (it-sequential "kills every mutant of the attribute escaping function"
+    (let ((results
+            (mutation-results
+             "src/serializer-core.lisp" 'cl-xml-kit::%escape-attribute
+             (lambda ()
+               (and
+                (equal
+                 (xml->string
+                  (make-xml-attribute
+                   :name (make-xml-name :local-name "v")
+                   :value (coerce
+                           '(#\& #\< #\> #\" #\Tab #\Newline #\Return)
+                           'string)))
+                 "v=\"&amp;&lt;&gt;&quot;&#9;&#10;&#13;\"")
+                (equal
+                 (xml->string
+                  (make-xml-attribute
+                   :name (make-xml-name :local-name "v")
+                   :value "plain"))
+                 "v=\"plain\""))))))
       (expect-not results :to-be nil)
       (expect (getf (assert-mutation-score results 1.0) :score) :to-equal 1.0))))
 

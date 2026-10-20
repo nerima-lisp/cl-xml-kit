@@ -1,5 +1,3 @@
-;;;; Mutate character-class predicates and the xml-digit-weight helper with cl-weave.
-
 (require :asdf)
 (require :sb-cltl2)
 
@@ -9,7 +7,7 @@
   (cl-xml-kit/script-support:load-project-definition)
   (asdf:load-system "cl-weave")
   (asdf:load-system "cl-xml-kit/test" :force t)
-  ; Mutants compile serially; prevent prior inline expansions from leaking.
+  ; Keep the mutated function from being inlined into other mutation targets.
   (proclaim
    (cons (quote notinline)
          (mapcar (lambda (name) (find-symbol name "CL-XML-KIT"))
@@ -17,30 +15,38 @@
                          "XML-NAME-START-CHAR-P" "XML-NAME-CHAR-P"
                          "XML-PUBID-CHAR-P" "XML-NCNAME-START-CHAR-P"
                          "XML-NCNAME-CHAR-P" "XML-SPACE-P" "XML-NCNAME-P"
-                         "XML-DIGIT-WEIGHT"))))))
+                         "XML-DIGIT-WEIGHT" "%MARKUP-CHARACTER-P"
+                         "%ESCAPE-TEXT" "%ESCAPE-ATTRIBUTE"))))))
 
 (progn
-  (defparameter *mutation-usage*
-    "Usage: sbcl --script scripts/run-mutation.lisp
+  (defparameter *mutation-usage* "Usage: sbcl --script scripts/run-mutation.lisp
 
-Run mutations of character-class predicates and the xml-digit-weight helper.
-Require every mutant to be killed by the existing focused tests. The script takes
-no options.")
+Run mutations of XML character classes, XML whitespace and NCName validation,
+digit weighting, and serializer escaping for text, canonical text, and
+attributes. Require every mutant to be killed by focused tests.
+No mutation-target options are accepted. Run from the repository root; the
+report is written to mutation-results.sexp.")
   (defparameter *generated-character-class-names*
     '("xml-char-p" "xml-space-char-p" "xml-name-start-char-p"
       "xml-name-char-p" "xml-pubid-char-p"
       "xml-ncname-start-char-p" "xml-ncname-char-p"))
   (defparameter *mutation-targets*
-    '(("xml-char-p" ("XML characters and whitespace"))
-      ("xml-space-char-p" ("XML characters and whitespace"))
-      ("xml-name-start-char-p" ("name characters"))
-      ("xml-name-char-p" ("name characters"))
-      ("xml-ncname-start-char-p" ("name characters"))
-      ("xml-ncname-char-p" ("name characters"))
-      ("xml-pubid-char-p" ("public identifier characters"))
-      ("xml-space-p" ("XML characters and whitespace"))
-      ("xml-ncname-p" ("name characters"))
-      ("xml-digit-weight" ("weighs " "gives code #x"))))
+    ; Name filters match substrings of test titles.
+    '(("xml-char-p" "src/char-class.lisp" ("XML characters and whitespace"))
+      ("xml-space-char-p" "src/char-class.lisp" ("XML characters and whitespace"))
+      ("xml-name-start-char-p" "src/char-class.lisp" ("name characters"))
+      ("xml-name-char-p" "src/char-class.lisp" ("name characters"))
+      ("xml-ncname-start-char-p" "src/char-class.lisp" ("name characters"))
+      ("xml-ncname-char-p" "src/char-class.lisp" ("name characters"))
+      ("xml-pubid-char-p" "src/char-class.lisp" ("public identifier characters"))
+      ("xml-space-p" "src/char-class.lisp" ("XML characters and whitespace"))
+      ("xml-ncname-p" "src/char-class.lisp" ("name characters"))
+      ("xml-digit-weight" "src/char-class.lisp" ("weighs " "gives code #x"))
+      ("%markup-character-p" "src/serializer-core.lisp"
+       ("characters that need markup escaping"))
+      ("%escape-text" "src/serializer-core.lisp" ("writes the text" "writes canonical text"))
+      ("%escape-attribute" "src/serializer-core.lisp"
+       ("writes the attribute value"))))
   (defun mutation-symbol (name)
     (let ((symbol (find-symbol (string-upcase name) "CL-XML-KIT")))
       (unless (and symbol (fboundp symbol))
@@ -71,24 +77,44 @@ no options.")
                    (null (third form))
                    (equal (fourth form)
                           (list (quote return-from) nil nil)))
-            ; LOOP ALWAYS discards NIL when its predicate succeeds.
+            ; Expose LOOP ALWAYS's failure test to mutation operators.
               (list (quote if)
                     (list (quote not) (second form))
                     (fourth form))
             form))
       form))
-  (defun mutation-target-form (name)
-    (let ((form
-           (sb-cltl2:macroexpand-all
-            (if (member name *generated-character-class-names*
-                        :test (function string=))
-                (generated-character-class-form name)
-              (cl-xml-kit/test::source-definition-form
-               "src/char-class.lisp" (mutation-symbol name))))))
-      (if (member name (list "xml-space-p" "xml-ncname-p")
-                  :test (function string=))
-          (normalize-discarded-loop-nil form)
-        form))))
+  (defun mutation-target-form (name source-path)
+    ; For serializer targets, expand CASE and COND to expose their source branches.
+    ; Leave LOOP and WITH-OUTPUT-TO-STRING intact so generated implementation
+    ; forms stay out of the mutation set. Other targets still use full expansion.
+    (labels ((expand-control-forms (form)
+               (cond
+                 ((atom form) form)
+                 ((member (first form) (list (quote quote) (quote function))
+                          :test (function eq))
+                  form)
+                 ((member (first form) (list (quote case) (quote cond))
+                          :test (function eq))
+                  (expand-control-forms (macroexpand-1 form)))
+                 (t (mapcar (function expand-control-forms) form)))))
+      (let* ((source-form
+               (if (member name *generated-character-class-names*
+                           :test (function string=))
+                   (generated-character-class-form name)
+                 (cl-xml-kit/test::source-definition-form
+                  source-path (mutation-symbol name))))
+             (form
+               (if (member name
+                           (list "%markup-character-p"
+                                 "%escape-text"
+                                 "%escape-attribute")
+                           :test (function string=))
+                   (expand-control-forms source-form)
+                 (sb-cltl2:macroexpand-all source-form))))
+        (if (member name (list "xml-space-p" "xml-ncname-p")
+                    :test (function string=))
+            (normalize-discarded-loop-nil form)
+          form)))))
   (defun mutation-selected-test-count (filters)
     (loop for filter in filters
           for plan = (cl-weave:collect-test-plan
@@ -137,9 +163,9 @@ no options.")
             (write-string report)
             (error "Focused mutation run returned an inconsistent summary")))))
       all-passed))
-  (defun mutation-results-for-target (name filters)
+  (defun mutation-results-for-target (name source-path filters)
     (let* ((symbol (mutation-symbol name))
-           (form (mutation-target-form name))
+           (form (mutation-target-form name source-path))
            (original (fdefinition symbol))
            (test-count (mutation-selected-test-count filters)))
       (unless (plusp test-count)
@@ -192,7 +218,8 @@ no options.")
     (let* ((targets *mutation-targets*)
            (target-results
              (mapcar (lambda (target)
-                       (mutation-results-for-target (first target) (second target)))
+                       (mutation-results-for-target
+                        (first target) (second target) (third target)))
                      targets))
            (results (apply #'append target-results))
            (summary (cl-weave:mutation-summary results))
