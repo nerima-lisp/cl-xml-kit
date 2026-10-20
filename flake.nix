@@ -165,6 +165,18 @@
             timeoutSeconds = 120;
           };
 
+          mutationCheck = ctx.cl.mkCommandCheck {
+            drv = ctx.package;
+            name = "cl-xml-kit-mutation";
+            command = [
+              (ctx.pkgs.lib.getExe ctx.pkgs.sbcl)
+              "--script"
+              "scripts/run-mutation.lisp"
+            ];
+            artifacts = [ "mutation-results.sexp" ];
+            timeoutSeconds = 300;
+          };
+
           coverageScannerFixturesCheck = ctx.cl.mkCommandCheck {
             drv = ctx.package;
             name = "cl-xml-kit-coverage-scanner-fixtures";
@@ -235,6 +247,7 @@
         {
           checks.xmlconf = xmlconfCheck;
           checks.coverage = coverageCheck;
+          checks.mutation = mutationCheck;
           checks.coverage-scanner-fixtures = coverageScannerFixturesCheck;
           checks.parser-kit-load = parserKitLoadCheck;
           apps.bench = {
