@@ -320,8 +320,8 @@
            (coverage-assert-inputs "source" (coverage-system-files "cl-xml-kit")))
          (test-files
            (coverage-assert-inputs "test" (coverage-system-files "cl-xml-kit/test")))
-         (minimum-expression 97.49d0)
-         (minimum-branch 99.43d0)
+         (minimum-expression 98.0d0)
+         (minimum-branch 99.8d0)
          (include-pathnames (list source-directory))
          (exclusion-path (merge-pathnames "scripts/coverage-exclusions.sexp" root)))
     (declare (ignore test-files))
