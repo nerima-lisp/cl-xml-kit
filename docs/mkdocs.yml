@@ -1,5 +1,9 @@
-# Build:   mkdocs build -f docs/mkdocs.yml --strict
-# Serve:   mkdocs serve  -f docs/mkdocs.yml
+# CI build: nix build .#docs --print-build-logs
+# Local preview: run these commands from the repository root:
+# python3 -m venv .venv
+# . .venv/bin/activate
+# python -m pip install mkdocs-material
+# mkdocs serve -f docs/mkdocs.yml
 
 site_name: cl-xml-kit
 site_description: Bounded XML toolkit for Common Lisp with cl-codec-kit and cl-parser-kit dependencies.
@@ -89,6 +93,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - API reference: api.md
   - Architecture: architecture.md
   - Migration to 2.0.0: migration.md
   - Benchmark guide: https://github.com/nerima-lisp/cl-xml-kit/blob/main/benchmark/README.md
