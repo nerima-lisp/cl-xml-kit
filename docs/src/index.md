@@ -1,37 +1,16 @@
 # cl-xml-kit
 
-`cl-xml-kit` is a Common Lisp XML 1.0 and Namespaces 1.0 toolkit for SBCL.
-The library offers bounded parsing, pull events, an immutable DOM, and XML
-serialization.
+`cl-xml-kit` provides bounded XML parsing, pull events, an immutable DOM, serialization, and source-preserving editing for SBCL.
 
-## Install
+## Dependencies
 
-Load the ASDF system after making the repository visible to ASDF:
+The runtime dependencies are [`cl-codec-kit`](https://github.com/nerima-lisp/cl-codec-kit) and [`cl-parser-kit`](https://github.com/nerima-lisp/cl-parser-kit). Tests use [`cl-weave`](https://github.com/nerima-lisp/cl-weave), and repository scripts use [`cl-host-kit`](https://github.com/nerima-lisp/cl-host-kit).
 
-```lisp
-(asdf:load-system "cl-xml-kit")
-```
+## Documentation
 
-The runtime dependency is
-[`cl-codec-kit`](https://github.com/nerima-lisp/cl-codec-kit). Tests use
-[`cl-weave`](https://github.com/nerima-lisp/cl-weave).
+The two GitHub links below open files on `main`, the branch used to build the published documentation site.
 
-## First parse
-
-```lisp
-(let ((document
-        (cl-xml-kit:parse-xml
-         "<root xmlns:p=\"urn:example\"><p:item>text</p:item></root>")))
-  (cl-xml-kit:xml->string document))
-```
-
-Use `make-xml-parser` and `next-xml-event` for incremental processing. Use
-`make-xml-resource-limits` when parsing input supplied by another system.
-External entity resolution is rejected by default.
-
-## Reference
-
-The [architecture reference](https://github.com/nerima-lisp/cl-xml-kit/blob/main/docs/design/architecture.md) describes the parser
-boundary, node model, event protocol, serialization, security controls, and
-verification commands. The repository README covers development and release
-commands.
+- [Architecture](architecture.md) covers the parser, data model, public APIs, and resource controls.
+- [Migration to 2.0.0](migration.md) records the exported API changes and export comparison.
+- [README quick start](https://github.com/nerima-lisp/cl-xml-kit/blob/main/README.md#quick-start) shows how to load the system and parse XML.
+- [Benchmark guide](https://github.com/nerima-lisp/cl-xml-kit/blob/main/benchmark/README.md) covers the benchmark and XMLConf catalog tools.
