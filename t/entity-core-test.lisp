@@ -238,14 +238,12 @@
                                (xml-condition-message
                                 "External general entity bare is disabled.")))))
 
-  (it "drops skipped external references and records each entity once"
+  (it "drops skipped external references"
     (let ((context (cl-xml-kit::parse-xml-internal-subset
                     "<!ENTITY remote SYSTEM 'urn:example:remote'>"
                     :external-entity-policy :skip)))
       (expect (cl-xml-kit::expand-xml-entity-references "A&remote;&remote;B" context)
-              :to-equal "AB")
-      (expect (cl-xml-kit::xml-entity-context-skipped-external-entities context)
-              :to-equal '("remote"))))
+              :to-equal "AB")))
   (it "treats an empty reference body as a named reference"
     (expect (cl-xml-kit::%reference-character "" (cl-xml-kit::make-xml-entity-context))
             :to-be nil)))

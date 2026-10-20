@@ -23,7 +23,7 @@
             (:constructor %make-xml-entity-context
                 (declarations parameter-declarations limits external-entity-policy
                  source position expansions expanded-characters expansion-stack
-                 skipped-external-entities attlist-element-names)))
+                 attlist-element-names)))
   "Mutable, parse-local state used while expanding XML entities."
   declarations
   parameter-declarations
@@ -34,7 +34,6 @@
   expansions
   expanded-characters
   expansion-stack
-  skipped-external-entities
   attlist-element-names)
 
 (defun make-xml-entity-context (&key
@@ -56,7 +55,7 @@
   (%make-xml-entity-context (make-hash-table :test #'equal)
                             (make-hash-table :test #'equal)
                             resource-limits external-entity-policy
-                            (and source (copy-seq source)) position 0 0 nil nil nil))
+                            (and source (copy-seq source)) position 0 0 nil nil))
 
 (defun make-xml-entity-declaration (&key name replacement-text parameter-p
                                          external-p system-id)
@@ -246,10 +245,5 @@
   (%declare-entity context declaration))
 
 (defun %external-entity-result (context declaration)
-  (if (eq (xml-entity-context-external-entity-policy context) :reject)
-      (%external-entity-error context declaration)
-      (progn
-        (pushnew (xml-entity-declaration-name declaration)
-                 (xml-entity-context-skipped-external-entities context)
-                 :test #'string=)
-        nil)))
+  (when (eq (xml-entity-context-external-entity-policy context) :reject)
+    (%external-entity-error context declaration)))

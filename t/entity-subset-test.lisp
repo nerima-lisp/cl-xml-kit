@@ -120,8 +120,8 @@
                              (xml-condition-message
                               "External parameter entity p is disabled."))))
 
-  (it "records a skipped external parameter entity"
-    (expect (cl-xml-kit::xml-entity-context-skipped-external-entities
+  (it "allows a skipped external parameter entity"
+    (expect (cl-xml-kit::xml-entity-context-p
              (cl-xml-kit::parse-xml-internal-subset
               "<!ENTITY % p SYSTEM 'x.dtd'>%p;" :external-entity-policy :skip))
-            :to-equal '("p"))))
+            :to-be t)))
