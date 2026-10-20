@@ -243,4 +243,24 @@ the report print relative to the test package."
                    ((probe-text-p cl-xml-kit::object)
                     (probe-write-text cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path))
                    (t
-                    (probe-write-fallback cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path)))))))))
+                    (probe-write-fallback cl-xml-kit::state cl-xml-kit::object cl-xml-kit::scope cl-xml-kit::level cl-xml-kit::path))))))))
+
+  (it "rejects an unknown parser dispatch context"
+    (expect
+     (expansion-error-message
+      (list (quote cl-xml-kit::define-parser-token-dispatch)
+            (quote probe-parser-token-dispatch)
+            (quote *probe-parser-token-rules*)
+            :missing))
+     :to-equal
+     "Unknown parser token dispatch context :MISSING in *PROBE-PARSER-TOKEN-RULES*."))
+
+  (it "rejects serializer tables without an otherwise handler"
+    (let ((*probe-serializer-node-rules*
+            (quote ((probe-document-p probe-write-document)))))
+      (expect
+       (expansion-error-message
+        (list (quote cl-xml-kit::define-serializer-node-dispatch)
+              (quote *probe-serializer-node-rules*)))
+       :to-equal
+       "Serializer node dispatch table *PROBE-SERIALIZER-NODE-RULES* needs an :OTHERWISE handler."))))

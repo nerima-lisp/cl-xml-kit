@@ -26,6 +26,15 @@
                              (xml-unsupported-encoding-encoding "UTF-16")
                              (xml-unsupported-encoding-reason :declaration-not-utf-8))))
 
+  (it "expands declaration failures into parser token errors"
+    (expect (macroexpand-1
+             (quote (cl-xml-kit::%declaration-fail parser token
+                     :expected-declaration-value :quoted-value)))
+            :to-equal
+            (quote (cl-xml-kit::%parser-token-error parser token
+                    (cl-xml-kit::xml-message :expected-declaration-value)
+                    :xml-declaration :quoted-value))))
+
   (it-each ((" <?xml version=\"1.0\"?><root/>" :document-start
              "The XML declaration must be first." 1)
             ("<r/><?xml version='1.0'?>" :document-start
