@@ -115,13 +115,12 @@ the pending character run, newest first, from TEXT-START to TEXT-END."
                        :end-position (dom-builder-end-position builder))))
 
 (defun parse-xml
-    (input &key source-name
-               (resource-limits nil resource-limits-supplied-p)
-               (external-entity-policy nil external-entity-policy-supplied-p))
+    (input &rest options
+           &key source-name resource-limits external-entity-policy)
   "Parse INPUT into an immutable XML document."
-  (unless resource-limits-supplied-p
+  (unless (member :resource-limits options)
     (setf resource-limits *default-xml-resource-limits*))
-  (unless external-entity-policy-supplied-p
+  (unless (member :external-entity-policy options)
     (setf external-entity-policy :reject))
   (%parser-document (make-xml-parser input :source-name source-name
                                            :resource-limits resource-limits

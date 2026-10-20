@@ -1,16 +1,15 @@
 (in-package #:cl-xml-kit)
 
 (defun make-xml-parser
-    (input &key source-name
-               (resource-limits nil resource-limits-supplied-p)
-               (external-entity-policy nil external-entity-policy-supplied-p))
+    (input &rest options
+           &key source-name resource-limits external-entity-policy)
   "Create a forward-only parser for XML input.
 
 The input is decoded and line-end normalized here; tokenizing and parsing
 happen one event at a time as the events are taken."
-  (unless resource-limits-supplied-p
+  (unless (member :resource-limits options)
     (setf resource-limits *default-xml-resource-limits*))
-  (unless external-entity-policy-supplied-p
+  (unless (member :external-entity-policy options)
     (setf external-entity-policy :reject))
   (unless (or (null source-name) (stringp source-name))
     (xml-error 'xml-input-error :label-must-be-string-or-nil
