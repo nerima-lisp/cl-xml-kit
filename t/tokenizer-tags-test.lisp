@@ -26,7 +26,7 @@
 (it-each (("< a>" nil :name "Expected an XML Name.")
           ("</ a>" nil :name "Expected an XML Name.")
           ("<1a>" nil :name "Expected an XML Name.")
-          ("<" nil :name "Expected an XML Name.")
+          ("<" :well-formedness nil "Unexpected end of XML input.")
           ("<!" nil :name "Expected an XML Name.")
           ("<!D" nil :name "Expected an XML Name.")
           ("<!X" nil :name "Expected an XML Name.")
