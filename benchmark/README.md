@@ -13,8 +13,8 @@ nix run .#bench
 ```
 
 The benchmark ASDF system depends on `cl-xml-kit`, `cl-weave`, and
-`cl-host-kit`; `cl-xml-kit` depends on `cl-codec-kit`. The flake supplies these
-dependencies for the command above.
+`cl-host-kit`; `cl-xml-kit` depends on `cl-codec-kit` and `cl-parser-kit`. The
+flake supplies these dependencies for the command above.
 
 The benchmark enforces minimums of 2 warmup rounds and 10 samples:
 
@@ -26,7 +26,8 @@ The benchmark enforces minimums of 2 warmup rounds and 10 samples:
 | `BENCH_OPERATIONS` | `all` | comma-separated `parse`, `utf8-parse`, `pull`, `serialize`, or `all` |
 | `BENCH_WORKLOADS` | `all` | comma-separated workload IDs or `all` |
 
-For a quick parser smoke run, select the small workload and the string parser:
+For a quick parser smoke run, use the small workload and string parser. The run
+still uses the minimum 2 warmups and 10 measured samples:
 
 ```sh
 BENCH_OPERATIONS=parse BENCH_WORKLOADS=small nix run .#bench
@@ -49,14 +50,20 @@ milliseconds, and allocation bytes.
 The `xmlconf` flake check downloads the
 [XML Test Suite 20130923 archive](https://www.w3.org/XML/Test/xmlts20130923.tar.gz),
 runs every selected case, and compares the catalog counts and execution totals
-(passed, failed, and skipped cases) with fixed values in `flake.nix`. For a
-direct run, download the archive and extract it with
-`tar -xzf xmlts20130923.tar.gz`. From the repository root, run the direct
-runner in the Nix development shell, which provides its dependencies to ASDF.
-Set `XML_KIT_XMLCONF_DIR` to the extracted `xmlconf` directory:
+(passed, failed, and skipped cases) with fixed values in `flake.nix`. To run it
+directly, download and extract the archive from the repository root:
 
 ```sh
-nix develop -c env XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
+curl -L -o xmlts20130923.tar.gz https://www.w3.org/XML/Test/xmlts20130923.tar.gz
+mkdir -p xmlconf-corpus
+tar -xzf xmlts20130923.tar.gz -C xmlconf-corpus
+```
+
+Run the direct runner in the Nix development shell, which provides its
+dependencies to ASDF. Set `XML_KIT_XMLCONF_DIR` to the extracted catalog:
+
+```sh
+nix develop -c env XML_KIT_XMLCONF_DIR=xmlconf-corpus/xmlconf \
   sbcl --script scripts/xmlconf-runner.lisp --run
 ```
 
@@ -76,23 +83,21 @@ reported as failed. An unknown option is a usage error (exit status 2);
 
 `nix flake check` includes the expression and branch coverage gate. The check
 uses `cl-weave` coverage statistics and writes native coverage data to
-`coverage.dat` and an HTML report to `coverage-report/`. It enforces the
-measured minimums configured in `scripts/run-coverage.lisp`. The form-level
-accounting manifests are `scripts/coverage-exclusions.sexp` and
-`scripts/coverage-follow-ups.sexp`. Each uncovered form must have exactly one
-entry across the two files, with a non-empty reason. Stale or overlapping
-entries fail the check.
+`coverage.dat` and an HTML report to `coverage-report/`. Use the report's source
+locations to identify uncovered forms. Each form must have one entry, with a
+non-empty reason, in either `scripts/coverage-exclusions.sexp` or
+`scripts/coverage-follow-ups.sexp`. Stale or overlapping entries fail the
+check.
 
 The mutation runner uses `cl-weave:run-mutations` with its default operators on
 the character-class predicates and `xml-digit-weight`. Its fixed targets are
 `xml-char-p`, `xml-space-char-p`, `xml-name-start-char-p`, `xml-name-char-p`,
 `xml-pubid-char-p`, `xml-ncname-start-char-p`, `xml-ncname-char-p`,
 `xml-space-p`, `xml-ncname-p`, and `xml-digit-weight`. It runs the existing
-focused tests for each function. Before mutation, it expands the loop forms.
-The `LOOP ALWAYS` forms in `xml-space-p` and `xml-ncname-p` discard the `NIL`
-returned when a predicate succeeds, so the runner removes those no-op branches
-before applying mutations. Otherwise, mutating a discarded value could produce
-an equivalent mutant that does not change behavior. A complete focused run with a failed
+focused tests for each function. The `LOOP ALWAYS` forms in `xml-space-p` and
+`xml-ncname-p` expand to an `IF` with a `NIL` branch whose value the loop
+discards. Before mutation, the runner removes that branch so a mutation cannot
+survive by changing an unobserved value. A complete focused run with a failed
 or errored test kills that mutant; an incomplete run, a surviving mutant, or a
 mutation runner error fails the gate. Run it from the repository root in the
 Nix development shell, which provides its dependencies to ASDF:
