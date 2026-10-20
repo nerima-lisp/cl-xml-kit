@@ -4,8 +4,8 @@
             (:constructor %make-dom-frame (event namespace-declarations))
             (:copier nil))
   "An element whose start event the DOM builder has taken and whose end it awaits."
-  event
-  namespace-declarations
+  (event nil :read-only t)
+  (namespace-declarations nil :read-only t)
   children)
 
 (defstruct (dom-builder

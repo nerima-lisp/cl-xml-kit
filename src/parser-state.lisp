@@ -7,11 +7,11 @@
   "One open element, or the boundary of an entity replacement when NAME is NIL.
 
 END-POSITION is the position of `/>` for an empty element and NIL otherwise."
-  lexical-name
-  name
-  namespace-declarations
-  context
-  end-position)
+  (lexical-name nil :read-only t)
+  (name nil :read-only t)
+  (namespace-declarations nil :read-only t)
+  (context nil :read-only t)
+  (end-position nil :read-only t))
 
 (defstruct (xml-parser
             (:constructor %make-xml-parser-structure
@@ -31,13 +31,13 @@ set, is called with each token read from the document itself, before the
 parser interprets it. ENTITY-SKIPS lists, in order, the (OFFSET . NAME) of the
 external entities skipped in the replacement text being read whose events are
 still due."
-  input
-  source-name
-  limits
-  external-entity-policy
+  (input "" :read-only t)
+  (source-name nil :read-only t)
+  (limits nil :read-only t)
+  (external-entity-policy :reject :read-only t)
   tokenizer
   tokenizer-stack
-  start-position
+  (start-position nil :read-only t)
   phase
   stack
   depth

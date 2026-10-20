@@ -12,12 +12,12 @@
                 (name replacement-text parameter-p external-p public-id system-id))
             (:copier nil))
   "An internal entity declaration, or an external declaration marker."
-  name
-  replacement-text
-  parameter-p
-  external-p
-  public-id
-  system-id)
+  (name "" :read-only t)
+  (replacement-text nil :read-only t)
+  (parameter-p nil :read-only t)
+  (external-p nil :read-only t)
+  (public-id nil :read-only t)
+  (system-id nil :read-only t))
 
 (defstruct (xml-entity-context
             (:constructor %make-xml-entity-context
