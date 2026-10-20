@@ -72,17 +72,16 @@
               collect (symbol-name symbol))
         #'string<))
 
-(it "exports exactly the architecture public API"
-  (expect (external-names (find-package "CL-XML-KIT"))
-          :to-equal (sort (copy-list +expected-export-names+) #'string<)))
-
-(it "defines every exported symbol as a function, macro, type, or variable"
-  (expect (loop for name in +expected-export-names+
-                for symbol = (find-symbol name "CL-XML-KIT")
-                unless (or (fboundp symbol) (find-class symbol nil) (boundp symbol))
-                  collect name)
-          :to-equal nil))
-
-(it "uses only the COMMON-LISP package"
-  (expect (mapcar #'package-name (package-use-list (find-package "CL-XML-KIT")))
-          :to-equal '("COMMON-LISP")))
+(describe "public package API"
+  (it "exports exactly the architecture public API"
+    (expect (external-names (find-package "CL-XML-KIT"))
+            :to-equal (sort (copy-list +expected-export-names+) #'string<)))
+  (it "defines every exported symbol as a function, macro, type, or variable"
+    (expect (loop for name in +expected-export-names+
+                  for symbol = (find-symbol name "CL-XML-KIT")
+                  unless (or (fboundp symbol) (find-class symbol nil) (boundp symbol))
+                    collect name)
+            :to-equal nil))
+  (it "uses only the COMMON-LISP package"
+    (expect (mapcar #'package-name (package-use-list (find-package "CL-XML-KIT")))
+            :to-equal '("COMMON-LISP"))))
