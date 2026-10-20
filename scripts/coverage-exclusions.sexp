@@ -85,6 +85,11 @@
  (:path "src/serializer.lisp" :kind :expression :operator "DEFUN" :name "WRITE-XML" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
  (:path "src/serializer.lisp" :kind :expression :operator "DEFUN" :name "XML->STRING" :reason "Only literal keyword default spans remain uncovered; structural validation confirms no function body expression is uncovered.")
  (:path "src/spans-api.lisp" :kind :expression :operator "DEFUN" :name "SCAN-XML-SPANS" :reason "Only the literal :external-entity-policy default remains uncovered; structural validation confirms no function body expression is uncovered.")
+ (:path "src/dom-builder.lisp" :kind :expression :operator "DEFSTRUCT" :name "DOM-FRAME" :reason "Only literal struct slot default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/entity-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-ENTITY-DECLARATION" :reason "Only literal struct slot default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/namespace.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-NAMESPACE-CONTEXT" :reason "Only literal struct slot default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/parser-state.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-PARSER" :reason "Only literal struct slot default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
+ (:path "src/parser-state.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-PARSER-FRAME" :reason "Only literal struct slot default spans remain uncovered; structural validation confirms no other span in the definition is uncovered.")
 )
 
 

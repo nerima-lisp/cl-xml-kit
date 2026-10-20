@@ -1,9 +1,4 @@
 (
- (:path "src/dom-builder.lisp" :kind :expression :operator "DEFSTRUCT" :name "DOM-FRAME" :action :test :owner :p3 :reason "struct の slot default は現行の scanner では coverage を計測できない。scanner の修正は P3 で行う")
- (:path "src/entity-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-ENTITY-DECLARATION" :action :test :owner :p3 :reason "struct の slot default は現行の scanner では coverage を計測できない。scanner の修正は P3 で行う")
- (:path "src/namespace.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-NAMESPACE-CONTEXT" :action :test :owner :p3 :reason "struct の slot default は現行の scanner では coverage を計測できない。scanner の修正は P3 で行う")
- (:path "src/parser-state.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-PARSER" :action :test :owner :p3 :reason "struct の slot default は現行の scanner では coverage を計測できない。scanner の修正は P3 で行う")
- (:path "src/parser-state.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-PARSER-FRAME" :action :test :owner :p3 :reason "struct の slot default は現行の scanner では coverage を計測できない。scanner の修正は P3 で行う")
  (:path "src/path-records.lisp" :kind :expression :operator "DEFSTRUCT" :name "PARSED-PATH" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in parsed-path.")
  (:path "src/path-records.lisp" :kind :expression :operator "DEFSTRUCT" :name "PATH-CONTEXT" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in path-context.")
  (:path "src/path-records.lisp" :kind :expression :operator "DEFSTRUCT" :name "PATH-HIT" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in path-hit.")
