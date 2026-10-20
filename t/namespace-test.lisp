@@ -118,15 +118,18 @@
                              (xml-namespace-error-namespace-uri ,namespace-uri)
                              (xml-condition-message ,message))))
 
-  (it "applies the name-length limit when resolving a qualified name"
-    (expect (lambda ()
-              (cl-xml-kit::%namespace-resolve-qname
-               "abcd" (cl-xml-kit::make-xml-namespace-context)
-               :resource-limits (make-xml-resource-limits :max-name-length 3)))
-            :to-signal-xml '(xml-resource-limit-exceeded
-                             (xml-resource-limit-exceeded-kind :max-name-length)
-                             (xml-resource-limit-exceeded-value 4)
-                             (xml-resource-limit-exceeded-limit 3))))
+  (it "applies name limits and retains context slot defaults"
+    (let ((defaults (cl-xml-kit::%make-xml-namespace-context-defaults)))
+      (expect (cl-xml-kit::%xml-namespace-context-bindings defaults)
+              :to-equal nil)
+      (expect (lambda ()
+                (cl-xml-kit::%namespace-resolve-qname
+                 "abcd" (cl-xml-kit::make-xml-namespace-context)
+                 :resource-limits (make-xml-resource-limits :max-name-length 3)))
+              :to-signal-xml (quote (xml-resource-limit-exceeded
+                                     (xml-resource-limit-exceeded-kind :max-name-length)
+                                     (xml-resource-limit-exceeded-value 4)
+                                     (xml-resource-limit-exceeded-limit 3))))))
 
   (it-each (("xmlns:p" "" "p" "")
             ("xmlns:" "urn:x" "" "urn:x")

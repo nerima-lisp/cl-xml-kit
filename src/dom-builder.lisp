@@ -2,6 +2,7 @@
 
 (defstruct (dom-frame
             (:constructor %make-dom-frame (event namespace-declarations))
+            (:constructor %make-dom-frame-defaults ())
             (:copier nil))
   "An element whose start event the DOM builder has taken and whose end it awaits."
   (event nil :read-only t)

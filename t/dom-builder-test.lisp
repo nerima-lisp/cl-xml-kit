@@ -124,9 +124,14 @@
                     (cl-xml-kit::dom-builder-text-end builder)
                     (cl-xml-kit::dom-builder-end-position builder))
               :to-equal '(nil nil nil nil nil nil))))
-  (it "starts a frame without children"
-    (let ((frame (funcall #'cl-xml-kit::%make-dom-frame :start nil)))
+  (it "initializes explicit and default frame fields"
+    (let ((frame (cl-xml-kit::%make-dom-frame :start nil))
+          (defaults (cl-xml-kit::%make-dom-frame-defaults)))
       (expect (list (cl-xml-kit::dom-frame-event frame)
                     (cl-xml-kit::dom-frame-namespace-declarations frame)
                     (cl-xml-kit::dom-frame-children frame))
-              :to-equal '(:start nil nil)))))
+              :to-equal (quote (:start nil nil)))
+      (expect (list (cl-xml-kit::dom-frame-event defaults)
+                    (cl-xml-kit::dom-frame-namespace-declarations defaults)
+                    (cl-xml-kit::dom-frame-children defaults))
+              :to-equal (quote (nil nil nil))))))

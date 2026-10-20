@@ -202,8 +202,10 @@
                                                         :resource-limits limits))))
               :to-equal '("ab&" "cd&")))))
 (describe "parser state defaults"
-  (it "starts with its initialized slot state and rejection policy"
-    (let ((parser (make-xml-parser "<r/>")))
+  (it "checks public parser defaults and internal state slot defaults"
+    (let ((parser (make-xml-parser "<r/>"))
+          (defaults (cl-xml-kit::%make-xml-parser-defaults))
+          (frame (cl-xml-kit::%make-xml-parser-frame-defaults)))
       (expect
        (list (cl-xml-kit::xml-parser-tokenizer-stack parser)
              (cl-xml-kit::xml-parser-phase parser)
@@ -220,4 +222,16 @@
              (cl-xml-kit::xml-parser-entity-skips parser))
        :to-equal (quote (nil :start nil 0 nil nil nil nil nil 0 0 nil nil)))
       (expect (cl-xml-kit::xml-parser-external-entity-policy parser)
-              :to-equal :reject))))
+              :to-equal :reject)
+      (expect (list (cl-xml-kit::xml-parser-input defaults)
+                    (cl-xml-kit::xml-parser-source-name defaults)
+                    (cl-xml-kit::xml-parser-limits defaults)
+                    (cl-xml-kit::xml-parser-external-entity-policy defaults)
+                    (cl-xml-kit::xml-parser-start-position defaults))
+              :to-equal (quote ("" nil nil :reject nil)))
+      (expect (list (cl-xml-kit::xml-parser-frame-lexical-name frame)
+                    (cl-xml-kit::xml-parser-frame-name frame)
+                    (cl-xml-kit::xml-parser-frame-namespace-declarations frame)
+                    (cl-xml-kit::xml-parser-frame-context frame)
+                    (cl-xml-kit::xml-parser-frame-end-position frame))
+              :to-equal (quote (nil nil nil nil nil))))))

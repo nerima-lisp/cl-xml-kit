@@ -10,6 +10,7 @@
 (defstruct (xml-entity-declaration
             (:constructor %make-xml-entity-declaration
                 (name replacement-text parameter-p external-p public-id system-id))
+            (:constructor %make-xml-entity-declaration-defaults ())
             (:copier nil))
   "An internal entity declaration, or an external declaration marker."
   (name "" :read-only t)

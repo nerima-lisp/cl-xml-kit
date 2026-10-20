@@ -69,6 +69,7 @@
 
 (defstruct (xml-namespace-context
             (:constructor %make-xml-namespace-context (bindings))
+            (:constructor %make-xml-namespace-context-defaults ())
             (:conc-name %xml-namespace-context-)
             (:copier nil))
   "An immutable snapshot of in-scope namespace bindings."

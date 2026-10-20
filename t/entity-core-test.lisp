@@ -43,13 +43,21 @@
                :name name :replacement-text replacement-text :external-p external-p))
             :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
 
-  (it "keeps the public and system identifiers of an external declaration"
+  (it "preserves declaration defaults and external identifiers"
     (let ((declaration (cl-xml-kit::make-xml-entity-declaration
-                        :name "e" :external-p t :public-id "-//P" :system-id "s")))
+                        :name "e" :external-p t :public-id "-//P" :system-id "s"))
+          (defaults (cl-xml-kit::%make-xml-entity-declaration-defaults)))
       (expect (list (cl-xml-kit::xml-entity-declaration-public-id declaration)
                     (cl-xml-kit::xml-entity-declaration-system-id declaration)
                     (cl-xml-kit::xml-entity-declaration-external-p declaration))
-              :to-equal '("-//P" "s" t)))))
+              :to-equal (quote ("-//P" "s" t)))
+      (expect (list (cl-xml-kit::xml-entity-declaration-name defaults)
+                    (cl-xml-kit::xml-entity-declaration-replacement-text defaults)
+                    (cl-xml-kit::xml-entity-declaration-parameter-p defaults)
+                    (cl-xml-kit::xml-entity-declaration-external-p defaults)
+                    (cl-xml-kit::xml-entity-declaration-public-id defaults)
+                    (cl-xml-kit::xml-entity-declaration-system-id defaults))
+              :to-equal (quote ("" nil nil nil nil nil))))))
 
 (describe "entity registration"
   (it "refuses to register into something other than an entity context"

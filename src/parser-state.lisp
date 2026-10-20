@@ -3,6 +3,7 @@
 (defstruct (xml-parser-frame
             (:constructor %make-xml-parser-frame
                 (lexical-name name namespace-declarations context end-position))
+            (:constructor %make-xml-parser-frame-defaults ())
             (:copier nil))
   "One open element, or the boundary of an entity replacement when NAME is NIL.
 
@@ -19,6 +20,7 @@ END-POSITION is the position of `/>` for an empty element and NIL otherwise."
                  tokenizer-stack start-position phase stack depth fatal root-seen
                  root-closed doctype-root doctype-seen element-count text-length
                  entities token-observer entity-skips))
+            (:constructor %make-xml-parser-defaults ())
             (:copier nil))
   "Forward-only parser state; it is also the continuation of the parse.
 
