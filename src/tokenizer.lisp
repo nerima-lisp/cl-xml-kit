@@ -184,6 +184,8 @@
                      (%xml-tokenizer-create-parser-tokenizer)))))
     (cl-parser-kit:make-tokenizer-cursor
      input parser-tokenizer
+     ;; Match the accepted input length so the cursor default cannot reject it.
+     :max-source-length (length input)
      :max-tokens (length input)
      :max-rules
      (loop for mode in (cl-parser-kit:tokenizer-modes parser-tokenizer)

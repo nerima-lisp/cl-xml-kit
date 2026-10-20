@@ -71,7 +71,14 @@
                 :to-signal-xml
                 (quote (xml-external-resource-disabled
                         (xml-external-resource-disabled-kind :external-dtd)
-                        (xml-condition-source nil))))))))
+                        (xml-condition-source nil)))))))
+  (it "parses input longer than the parser cursor default limit"
+    (let ((document
+            (let ((cl-parser-kit:*maximum-tokenizer-source-length* 8))
+              (parse-xml "<root>text</root>"
+                         :resource-limits
+                         (make-xml-resource-limits :max-document-characters 64)))))
+      (expect (xml-document-p document) :to-equal t))))
 
 (describe "event mapping"
   (it "maps the same events as the pull reader and returns nil"
