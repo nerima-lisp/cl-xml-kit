@@ -1,10 +1,8 @@
-# cl-xml-kit documentation configuration.
-#
 # Build:   mkdocs build -f docs/mkdocs.yml --strict
 # Serve:   mkdocs serve  -f docs/mkdocs.yml
 
 site_name: cl-xml-kit
-site_description: Dependency-free XML toolkit foundation for Common Lisp.
+site_description: Bounded XML toolkit for Common Lisp with cl-codec-kit and cl-parser-kit dependencies.
 site_author: cl-xml-kit contributors
 site_url: https://nerima-lisp.github.io/cl-xml-kit/
 
@@ -12,6 +10,7 @@ repo_name: nerima-lisp/cl-xml-kit
 repo_url: https://github.com/nerima-lisp/cl-xml-kit
 edit_uri: edit/main/docs/src/
 
+# MkDocs resolves these paths relative to this configuration file.
 docs_dir: src
 site_dir: ../site
 use_directory_urls: true
@@ -90,4 +89,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Architecture: architecture.md
+  - Migration to 2.0.0: migration.md
+  - Benchmark guide: https://github.com/nerima-lisp/cl-xml-kit/blob/main/benchmark/README.md
 
