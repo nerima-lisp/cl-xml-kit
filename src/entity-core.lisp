@@ -38,10 +38,14 @@
   attlist-element-names)
 
 (defun make-xml-entity-context (&key
-                                  (resource-limits *default-xml-resource-limits*)
-                                  (external-entity-policy :reject)
+                                  (resource-limits nil resource-limits-supplied-p)
+                                  (external-entity-policy nil external-entity-policy-supplied-p)
                                   source position)
   "Create parse-local entity state using RESOURCE-LIMITS and POLICY."
+  (unless resource-limits-supplied-p
+    (setf resource-limits *default-xml-resource-limits*))
+  (unless external-entity-policy-supplied-p
+    (setf external-entity-policy :reject))
   (check-argument resource-limits xml-resource-limits-p xml-input-error
                   :label-must-be-resource-limits-value
                   :format-arguments ("RESOURCE-LIMITS"))

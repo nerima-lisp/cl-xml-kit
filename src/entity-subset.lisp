@@ -203,10 +203,14 @@ Return the declaration and the position after its closing >."
           do (setf index (%process-internal-subset-item text index context)))))
 
 (defun parse-xml-internal-subset (subset &key
-                                         (resource-limits *default-xml-resource-limits*)
-                                         (external-entity-policy :reject)
+                                         (resource-limits nil resource-limits-supplied-p)
+                                         (external-entity-policy nil external-entity-policy-supplied-p)
                                          source position)
   "Parse internal ENTITY declarations from SUBSET and return an entity context."
+  (unless resource-limits-supplied-p
+    (setf resource-limits *default-xml-resource-limits*))
+  (unless external-entity-policy-supplied-p
+    (setf external-entity-policy :reject))
   (check-argument subset stringp xml-input-error :label-must-be-string
                   :format-arguments ("INTERNAL-SUBSET"))
   (let ((context (make-xml-entity-context
