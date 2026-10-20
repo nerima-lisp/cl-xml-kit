@@ -157,7 +157,9 @@
                                     :empty-element-close
                                     :tag-close)))
                       (multiple-value-bind (actual-kind value start end)
-                          (%xml-tokenizer-start-tag-close tokenizer kind literal)
+                          (if (eq phase :end-after-name)
+                             (%xml-tokenizer-next-end-tag-close tokenizer)
+                             (%xml-tokenizer-start-tag-close tokenizer kind literal))
                         (declare (ignore start))
                         (setf (%xml-tokenizer-state-tag-phase state) nil
                               *xml-tokenizer-actual-token-kind* actual-kind)
