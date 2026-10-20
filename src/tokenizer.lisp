@@ -29,8 +29,7 @@
                         (setf (%xml-tokenizer-state-tag-open-p state) t)
                         (multiple-value-bind (actual-kind value start end)
                             (%xml-tokenizer-token tokenizer kind nil position)
-                          (unless (and (eq actual-kind kind) (= start index))
-                            (error "XML tokenizer open rule and scanner disagree."))
+                          (declare (ignore start))
                           (setf *xml-tokenizer-actual-token-kind* actual-kind)
                           (values t (- end index) nil value))))))))
              (content-rule ()
@@ -45,24 +44,22 @@
                                  ((char= character #\<)
                                   (%xml-tokenizer-special-markup-kind text index))
                                  (t :text))))
-                    (when kind
-                      (multiple-value-bind (actual-kind value start end)
-                          (ecase kind
-                            (:text (%xml-tokenizer-scan-text tokenizer))
-                            (:entity-reference
-                             (multiple-value-bind (value position)
-                                 (%xml-tokenizer-scan-entity tokenizer)
-                               (%xml-tokenizer-token tokenizer :entity-reference
-                                                     value position)))
-                            (:comment (%xml-tokenizer-scan-comment tokenizer))
-                            (:cdata (%xml-tokenizer-scan-cdata tokenizer))
-                            (:doctype (%xml-tokenizer-scan-doctype tokenizer))
-                            (:processing-instruction
-                             (%xml-tokenizer-scan-processing-instruction tokenizer)))
-                        (unless (and (eq actual-kind kind) (= start index))
-                          (error "XML tokenizer content rule and scanner disagree."))
-                        (setf *xml-tokenizer-actual-token-kind* actual-kind)
-                        (values t (- end index) nil value)))))))
+                    (multiple-value-bind (actual-kind value start end)
+                      (ecase kind
+                        (:text (%xml-tokenizer-scan-text tokenizer))
+                        (:entity-reference
+                         (multiple-value-bind (value position)
+                             (%xml-tokenizer-scan-entity tokenizer)
+                           (%xml-tokenizer-token tokenizer :entity-reference
+                                                 value position)))
+                        (:comment (%xml-tokenizer-scan-comment tokenizer))
+                        (:cdata (%xml-tokenizer-scan-cdata tokenizer))
+                        (:doctype (%xml-tokenizer-scan-doctype tokenizer))
+                        (:processing-instruction
+                         (%xml-tokenizer-scan-processing-instruction tokenizer)))
+                      (declare (ignore start))
+                      (setf *xml-tokenizer-actual-token-kind* actual-kind)
+                      (values t (- end index) nil value))))))
              (space-rule (after-value-p)
                (cl-parser-kit:make-token-rule
                 :type :whitespace
@@ -87,8 +84,7 @@
                   (let ((tokenizer *xml-tokenizer-active*))
                     (multiple-value-bind (actual-kind value start end)
                         (funcall scanner tokenizer)
-                      (unless (= start index)
-                        (error "XML tokenizer tag rule and scanner disagree."))
+                      (declare (ignore start))
                       (setf *xml-tokenizer-actual-token-kind* actual-kind)
                       (values t (- end index) nil value))))))
              (start-close-rule ()
@@ -105,8 +101,7 @@
                                      :empty-element-close :tag-close)))
                       (multiple-value-bind (actual-kind value start end)
                           (%xml-tokenizer-start-tag-close tokenizer kind literal)
-                        (unless (and (eq actual-kind kind) (= start index))
-                          (error "XML tokenizer close rule and scanner disagree."))
+                        (declare (ignore start))
                         (setf *xml-tokenizer-actual-token-kind* actual-kind)
                         (values t (- end index) nil value)))))))
              (end-close-rule ()
@@ -119,8 +114,7 @@
                     (let ((tokenizer *xml-tokenizer-active*))
                       (multiple-value-bind (actual-kind value start end)
                           (%xml-tokenizer-next-end-tag-close tokenizer)
-                        (unless (and (eq actual-kind :tag-close) (= start index))
-                          (error "XML tokenizer close rule and scanner disagree."))
+                        (declare (ignore start))
                         (setf *xml-tokenizer-actual-token-kind* actual-kind)
                         (values t (- end index) nil value)))))))
              (mode-rules ()
