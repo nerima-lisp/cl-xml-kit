@@ -26,7 +26,8 @@
               "</a>"))
             ("<a xml:space=\"other\"><b/></a>" 2 ("<a xml:space=\"other\">" "  <b/>" "</a>"))
             ("<a xmlns:q=\"urn:q\" q:space=\"preserve\"><b/></a>" 2
-             ("<a xmlns:q=\"urn:q\" q:space=\"preserve\">" "  <b/>" "</a>")))
+             ("<a xmlns:q=\"urn:q\" q:space=\"preserve\">" "  <b/>" "</a>"))
+            ("<r/> " 2 ("<r/>")))
       "formats ~S at indent ~D as the expected lines~*"
       (source indent lines)
     (expect (format-result source :indent indent) :to-equal (apply #'format-lines +format-lf+ lines)))

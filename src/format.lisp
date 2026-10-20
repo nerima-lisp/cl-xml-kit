@@ -155,10 +155,7 @@ The last clause is the processing instruction."
               (xml-doctype
                (line (subseq source (span-node-start doctype) (span-node-end doctype))
                      doctype))
-              (xml-text
-               (unless (%format-whitespace-text-p node)
-                 (%format-node state node 0 nil nil)
-                 (%format-write state line-break node)))
+              (xml-text nil)
               (t
                (%format-node state node 0 nil nil)
                (%format-write state line-break node)))))))))
