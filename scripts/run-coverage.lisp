@@ -292,7 +292,7 @@
                            (coverage-form-entry-key entry)))
                   (incf checked)))))))
       (format t "coverage-constant-default-exclusions checked=~D~%" checked)))
-  (defun coverage-diagnose-p3-struct-spans (files follow-up-path)
+  (defun coverage-diagnose-default-follow-ups (files follow-up-path)
     (labels ((state-histogram (states start end)
                               (let ((counts (make-hash-table :test #'eql)))
                                 (loop for index from start below end
@@ -317,25 +317,32 @@
                                         :length (if (stringp source) (length source) nil)))))
       (let* ((follow-ups (coverage-read-form-entries follow-up-path t))
              (targets
-               (remove-if-not
-                (lambda (entry)
-                  (and (member (getf entry :owner) '(:p3 :w3))
-                       (eq (getf entry :action) :test)
+              (remove-if-not
+               (lambda (entry)
+                 (and (member (getf entry :owner) '(:p3 :w3))
+                      (eq (getf entry :action) :test)
+                      (and
                        (member (getf entry :operator) '("DEFUN" "DEFSTRUCT")
-                               :test #'string=)))
-                follow-ups))
+                               :test #'string=)
+                       (member (getf entry :name) '("DOM-FRAME" "XML-ENTITY-DECLARATION" "XML-NAMESPACE-CONTEXT"
+                                                                "XML-PARSER" "XML-PARSER-FRAME" "EDIT-XML-APPEND"
+                                                                "EDIT-XML-DELETE" "EDIT-XML-SET" "SELECT-XML" "SCAN-XML-SPANS"
+                                                                "FORMAT-STATE" "FORMAT-XML" "XML-SERIALIZER-STATE"
+                                                                "%WRITE-XML" "WRITE-XML" "XML->STRING")
+                               :test #'string=))))
+               follow-ups))
              (root (cl-xml-kit/script-support:repository-root))
              (owners 0)
              (records-seen 0))
         (dolist (entry targets)
           (let* ((path (getf entry :path))
                  (file
-                   (find-if
-                    (lambda (candidate)
-                      (string= path
-                               (enough-namestring
-                                (getf candidate :pathname) root)))
-                    files)))
+                  (find-if
+                   (lambda (candidate)
+                     (string= path
+                              (enough-namestring
+                               (getf candidate :pathname) root)))
+                   files)))
             (unless file
               (error "Coverage default diagnostic has no measured file: ~S"
                      (coverage-form-entry-key entry)))
@@ -344,27 +351,27 @@
                   (sb-cover::compute-file-info filename :default)
                 (declare (ignore counts))
                 (let* ((forms
-                         (coverage-top-level-forms (getf file :pathname) source))
+                        (coverage-top-level-forms (getf file :pathname) source))
                        (owner
-                         (find-if
-                          (lambda (candidate)
-                            (multiple-value-bind (operator name)
-                                (coverage-form-identity (getf candidate :form))
-                              (and (string= operator (getf entry :operator))
-                                   (equal name (getf entry :name)))))
-                          forms))
+                        (find-if
+                         (lambda (candidate)
+                           (multiple-value-bind (operator name)
+                               (coverage-form-identity (getf candidate :form))
+                             (and (string= operator (getf entry :operator))
+                                  (equal name (getf entry :name)))))
+                         forms))
                        (uncovered
-                         (remove-if-not
-                          (lambda (form)
-                            (equal (coverage-form-key path form forms)
-                                   (coverage-form-entry-key entry)))
-                          (getf file :uncovered-forms))))
+                        (remove-if-not
+                         (lambda (form)
+                           (equal (coverage-form-key path form forms)
+                                  (coverage-form-entry-key entry)))
+                         (getf file :uncovered-forms))))
                   (unless owner
                     (error "Coverage default diagnostic has no source owner: ~S"
                            (coverage-form-entry-key entry)))
                   (let ((default-only
-                          (coverage-owner-exclusion-allowed-p owner source uncovered))
-                        (states (sb-cover::compute-file-states filename)))
+                         (coverage-owner-exclusion-allowed-p owner source uncovered))
+                        (states (nth-value 1 (sb-cover::compute-file-states filename))))
                     (format t
                             "coverage-default-follow-up file=~A owner=~S operator=~A name=~S literal-default-only=~S spans=~D~%"
                             filename (getf entry :owner) (getf entry :operator)
@@ -373,11 +380,11 @@
                       (let* ((start (getf record :start))
                              (end (getf record :end))
                              (states-histogram
-                               (safe-histogram states start end))
+                              (safe-histogram states start end))
                              (info-histogram
-                               (safe-histogram info-states start end))
+                              (safe-histogram info-states start end))
                              (source-slice
-                               (safe-source-slice source start end)))
+                              (safe-source-slice source start end)))
                         (format t
                                 "coverage-default-span file=~A owner=~S kind=~S start=~D end=~D line=~D column=~D state-length=~D info-state-length=~D source-length=~D compute-file-states=~S compute-file-info=~S source=~S~%"
                                 filename (getf entry :name)
@@ -387,8 +394,9 @@
                                 states-histogram info-histogram source-slice)
                         (incf records-seen)))
                     (incf owners))))))
-        (format t "coverage-default-diagnostics owners=~D records=~D~%"
-                owners records-seen)))))
+          (when (= owners (length targets))
+            (format t "coverage-default-diagnostics owners=~D records=~D~%"
+                    owners records-seen))))))
 
   (defun coverage-require-files-measured (source-files statistics)
     (let ((measured (mapcar (lambda (file) (truename (getf file :pathname)))
@@ -464,8 +472,8 @@
                    :include-pathnames include-pathnames))))
           (coverage-emit-statistics statistics minimum-expression minimum-branch)
           (progn
-  (coverage-check-form-accounting files exclusion-path)
-  (coverage-check-constant-default-exclusions files exclusion-path)
-  (coverage-diagnose-p3-struct-spans
+  (coverage-diagnose-default-follow-ups
    files
-   (merge-pathnames "scripts/coverage-follow-ups.sexp" root))))))))
+   (merge-pathnames "scripts/coverage-follow-ups.sexp" root))
+  (coverage-check-form-accounting files exclusion-path)
+  (coverage-check-constant-default-exclusions files exclusion-path)))))))

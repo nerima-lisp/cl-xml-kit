@@ -38,14 +38,15 @@
   skipped-external-entities
   attlist-element-names)
 
-(defun make-xml-entity-context (&rest options
-                                  &key resource-limits external-entity-policy
-                                    source position)
+(defun make-xml-entity-context (&key
+                                  (resource-limits *default-xml-resource-limits*
+                                                   resource-limits-supplied-p)
+                                  (external-entity-policy :reject
+                                                          external-entity-policy-supplied-p)
+                                  source position)
   "Create parse-local entity state using RESOURCE-LIMITS and POLICY."
-  (unless (member :resource-limits options)
-    (setf resource-limits *default-xml-resource-limits*))
-  (unless (member :external-entity-policy options)
-    (setf external-entity-policy :reject))
+  (declare (ignorable resource-limits-supplied-p
+                      external-entity-policy-supplied-p))
   (check-argument resource-limits xml-resource-limits-p xml-input-error
                   :label-must-be-resource-limits-value
                   :format-arguments ("RESOURCE-LIMITS"))

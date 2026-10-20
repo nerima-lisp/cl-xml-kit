@@ -96,7 +96,20 @@
             :to-signal-xml
             (quote (xml-external-resource-disabled
                     (xml-external-resource-disabled-kind :general-entity)
-                    (xml-external-resource-disabled-identifier "urn:example:remote"))))))
+                    (xml-external-resource-disabled-identifier "urn:example:remote"))))
+    (expect (lambda ()
+              (parse-xml "<r/>" :external-entity-policy :resource-limits))
+            :to-signal-xml
+            '(xml-input-error
+              (xml-condition-message "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP.")))
+    (let ((*default-xml-resource-limits*
+            (make-xml-resource-limits :max-elements 1)))
+      (expect (lambda () (parse-xml "<a><b/></a>"))
+              :to-signal-xml
+              '(xml-resource-limit-exceeded
+                (xml-resource-limit-exceeded-kind :max-elements)
+                (xml-resource-limit-exceeded-value 2)
+                (xml-resource-limit-exceeded-limit 1))))))
 
 (describe "positions"
   (it "records the end of the input as the document end position"
@@ -134,4 +147,27 @@
       (expect (list (cl-xml-kit::dom-frame-event defaults)
                     (cl-xml-kit::dom-frame-namespace-declarations defaults)
                     (cl-xml-kit::dom-frame-children defaults))
-              :to-equal (quote (nil nil nil))))))
+              :to-equal (quote (nil nil nil)))))
+  (it "uses XML name and position defaults while preserving explicit values"
+    (let ((default-position (make-xml-position))
+          (default-name (make-xml-name :local-name "root"))
+          (explicit-position (make-xml-position :offset 5 :line 2 :column 3))
+          (explicit-name
+            (make-xml-name :local-name "root" :namespace-uri "urn:root" :prefix "p")))
+      (expect (list (xml-position-offset default-position)
+                    (xml-position-line default-position)
+                    (xml-position-column default-position)
+                    (xml-name-namespace-uri default-name)
+                    (xml-name-prefix default-name))
+              :to-equal (quote (0 1 1 "" nil)))
+      (expect (list (xml-position-offset explicit-position)
+                    (xml-position-line explicit-position)
+                    (xml-position-column explicit-position)
+                    (xml-name-namespace-uri explicit-name)
+                    (xml-name-prefix explicit-name))
+              :to-equal (quote (5 2 3 "urn:root" "p")))
+      (expect (lambda ()
+                (make-xml-name :local-name "root" :prefix :namespace-uri))
+              :to-signal-xml
+              (quote (xml-input-error
+                      (xml-condition-message "PREFIX must be a string or NIL.")))))))

@@ -36,7 +36,8 @@
              (uncovered
                (mapcar (lambda (text)
                          (coverage-fixture-expression source text))
-                       '(":reject" "\"\"" "nil" "0"))))
+                       '("(policy :reject)" "(namespace-uri \"\")"
+                         "(optional nil)" "(offset 0)"))))
         (check-fixture "constant keyword defaults" t owner source uncovered))
       (let* ((source
                "(defstruct accepted-constant-slots \"slot doc\" (policy :reject) (namespace-uri \"\") (optional nil) (offset 1 :type integer))")
@@ -44,20 +45,21 @@
              (uncovered
                (mapcar (lambda (text)
                          (coverage-fixture-expression source text))
-                       '(":reject" "\"\"" "nil" "1"))))
+                       '("(policy :reject)" "(namespace-uri \"\")"
+                         "(optional nil)" "(offset 1 :type integer)"))))
         (check-fixture "constant slot initforms" t owner source uncovered))
       (let* ((source
                "(defun rejected-dynamic-default (&key (token (gensym \"token\"))) token)")
              (owner (coverage-fixture-owner source))
              (uncovered
                (list (coverage-fixture-expression
-                      source "(gensym \"token\")"))))
+                      source "(token (gensym \"token\"))"))))
         (check-fixture "dynamic default" nil owner source uncovered))
       (let* ((source
                "(defun rejected-body-expression (&key (policy :reject)) (error \"uncovered\"))")
              (owner (coverage-fixture-owner source))
              (uncovered
-               (list (coverage-fixture-expression source ":reject")
+               (list (coverage-fixture-expression source "(policy :reject)")
                      (coverage-fixture-expression
                       source "(error \"uncovered\")"))))
         (check-fixture "uncovered body" nil owner source uncovered)))

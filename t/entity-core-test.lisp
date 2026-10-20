@@ -5,13 +5,15 @@
             (:external-entity-policy :load "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP.")
             (:external-entity-policy nil "EXTERNAL-ENTITY-POLICY must be :REJECT or :SKIP.")
             (:source 42 "SOURCE must be a string or NIL.")
+            (:source :resource-limits "SOURCE must be a string or NIL.")
+            (:source :external-entity-policy "SOURCE must be a string or NIL.")
             (:position "p" "POSITION must be an XML-POSITION."))
       "refuses ~S ~S with the message ~S"
       (key value message)
     (expect (lambda () (cl-xml-kit::make-xml-entity-context key value))
             :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
 
-  (it-each ((:load) (nil))
+  (it-each ((:load) (nil) (:resource-limits))
       "refuses external-entity policy ~S when parsing a subset"
       (policy)
     (expect (lambda ()
@@ -26,10 +28,25 @@
       (setf (char source 0) #\X)
       (expect (cl-xml-kit::xml-entity-context-source context) :to-equal "doc.xml")))
 
-  (it "rejects external entities unless the skip policy is requested"
-    (expect (cl-xml-kit::xml-entity-context-external-entity-policy
-             (cl-xml-kit::make-xml-entity-context))
-            :to-be :reject)))
+  (it "uses omitted limits and rejects external entities by default"
+    (let* ((*default-xml-resource-limits* (make-xml-resource-limits :max-elements 3))
+           (context (cl-xml-kit::make-xml-entity-context))
+           (subset-context
+             (cl-xml-kit::parse-xml-internal-subset
+              "<!ENTITY remote SYSTEM 'urn:example:remote'>")))
+      (expect (list (cl-xml-kit::xml-entity-context-limits context)
+                    (cl-xml-kit::xml-entity-context-limits subset-context))
+              :to-equal (list *default-xml-resource-limits*
+                              *default-xml-resource-limits*))
+      (expect (list (cl-xml-kit::xml-entity-context-external-entity-policy context)
+                    (cl-xml-kit::xml-entity-context-external-entity-policy subset-context))
+              :to-equal '(:reject :reject))
+      (expect (lambda ()
+                (cl-xml-kit::expand-xml-entity-references "&remote;" subset-context))
+              :to-signal-xml
+              '(xml-external-resource-disabled
+                (xml-external-resource-disabled-kind :general-entity)
+                (xml-external-resource-disabled-identifier "urn:example:remote"))))))
 
 (describe "entity declaration construction"
   (it-each (("" "x" nil "ENTITY NAME must be a non-empty string.")

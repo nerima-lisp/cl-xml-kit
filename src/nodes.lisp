@@ -42,15 +42,12 @@
       (xml-error 'xml-input-error :position-value-required)))
   value)
 
-(defun make-xml-position (&rest options
-                             &key source offset line column)
+(defun make-xml-position (&key source
+                              (offset 0 offset-supplied-p)
+                              (line 1 line-supplied-p)
+                              (column 1 column-supplied-p))
   "Return an immutable source position with zero-based OFFSET and one-based LINE and COLUMN."
-  (unless (member :offset options)
-    (setf offset 0))
-  (unless (member :line options)
-    (setf line 1))
-  (unless (member :column options)
-    (setf column 1))
+  (declare (ignorable offset-supplied-p line-supplied-p column-supplied-p))
   (%string-or-nil source "SOURCE")
   (unless (and (integerp offset) (not (minusp offset)))
     (xml-error 'xml-input-error :offset-must-be-non-negative))
@@ -72,11 +69,11 @@
    (prefix nil xml-name-prefix "Return the lexical prefix of an XML name, or NIL."
            :identity)))
 
-(defun make-xml-name (&rest options
-                         &key local-name namespace-uri prefix)
+(defun make-xml-name (&key local-name
+                          (namespace-uri "" namespace-uri-supplied-p)
+                          prefix)
   "Return an immutable expanded XML name; PREFIX is lexical and may be NIL."
-  (unless (member :namespace-uri options)
-    (setf namespace-uri ""))
+  (declare (ignorable namespace-uri-supplied-p))
   (%string-value local-name "LOCAL-NAME" :nonempty t :no-colon t)
   (%string-value namespace-uri "NAMESPACE-URI")
   (%string-or-nil prefix "PREFIX")

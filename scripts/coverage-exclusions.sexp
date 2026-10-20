@@ -68,6 +68,12 @@
  (:path "src/tokenizer-tags.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
  (:path "src/tokenizer.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
  (:path "src/verify.lisp" :kind :expression :operator "IN-PACKAGE" :name "CL-XML-KIT" :reason "Package selection is read during loading and has no XML runtime behavior.")
+ (:path "src/parser-api.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-PARSER" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/dom-builder.lisp" :kind :expression :operator "DEFUN" :name "PARSE-XML" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/entity-core.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-ENTITY-CONTEXT" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/entity-subset.lisp" :kind :expression :operator "DEFUN" :name "PARSE-XML-INTERNAL-SUBSET" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/nodes.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-POSITION" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
+ (:path "src/nodes.lisp" :kind :expression :operator "DEFUN" :name "MAKE-XML-NAME" :reason "Only literal keyword default spans remain uncovered; tests cover omitted and explicit values.")
 )
 
 
