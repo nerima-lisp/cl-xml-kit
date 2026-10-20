@@ -1,71 +1,49 @@
 # cl-xml-kit
 
-`cl-xml-kit` is a Common Lisp XML 1.0 and Namespaces 1.0 toolkit for SBCL.
-It provides bounded parsing, pull events, an immutable DOM, and XML
-serialization.
+`cl-xml-kit` is an SBCL-oriented Common Lisp toolkit for XML 1.0 and Namespaces 1.0.
 
 ## Features
 
-- XML 1.0 Fifth Edition well-formedness checks
-- Namespaces 1.0 namespace expansion and duplicate expanded-name detection
-- Input from strings, character streams, and UTF-8 octet vectors
-- Pull parsing with typed events and source positions
-- Immutable document and element nodes
-- XML and canonical serialization
+- XML 1.0 Fifth Edition well-formedness checks and Namespaces 1.0 processing
+- Pull parsing with typed events and an immutable DOM
 - Resource limits and external-entity rejection by default
-
-The public API is documented by the exports in `src/package.lisp` and the
-design reference in [docs/design/architecture.md](docs/design/architecture.md).
+- XML serialization and XML Test Suite Second Canonical Form serialization
+- Source-preserving selection, edits, and formatting
 
 ## Requirements
 
-- SBCL
-- ASDF
-- [`cl-codec-kit`](https://github.com/nerima-lisp/cl-codec-kit) at runtime
-- [`cl-weave`](https://github.com/nerima-lisp/cl-weave) for the test system
-
-External entity resolution, DTD validation, XPath, and XSLT are outside the
-scope of this release. Resource limits should be configured for untrusted
-inputs.
+- SBCL and ASDF
+- Runtime dependencies: [`cl-codec-kit`](https://github.com/nerima-lisp/cl-codec-kit) and [`cl-parser-kit`](https://github.com/nerima-lisp/cl-parser-kit)
+- Test dependency: [`cl-weave`](https://github.com/nerima-lisp/cl-weave)
+- Repository scripts use [`cl-host-kit`](https://github.com/nerima-lisp/cl-host-kit)
 
 ## Quick start
 
-```lisp
-(asdf:load-system "cl-xml-kit")
+From the repository root, run `nix develop -c sbcl` to start SBCL with the flake's
+runtime dependencies available. Without Nix, install `cl-codec-kit` and
+`cl-parser-kit` with your Common Lisp dependency manager, or check out their
+sources and add the directories containing `cl-codec-kit.asd` and
+`cl-parser-kit.asd` to `asdf:*central-registry*` before loading the system. The
+snippet adds this checkout to the same registry. In either setup, run it from
+the repository root so `truename "./"` points to this checkout.
 
-(let* ((document (cl-xml-kit:parse-xml
-                  "<root xmlns:p=\"urn:example\"><p:item>text</p:item></root>"))
-       (xml (cl-xml-kit:xml->string document)))
-  (write-line xml))
+```lisp
+(require :asdf)
+(push (truename "./") asdf:*central-registry*)
+(asdf:load-system "cl-xml-kit")
+(let ((document (cl-xml-kit:parse-xml "<root>hello</root>")))
+  (write-line (cl-xml-kit:xml->string document)))
 ```
 
-For incremental processing, construct an `xml-parser` with
-`make-xml-parser` and call `next-xml-event` until `xml-parser-eof-p` is true.
-Use `make-xml-resource-limits` to bound depth, input size, attributes, and
-other parser resources.
+## Documentation
+
+- [Architecture](docs/src/architecture.md) describes the parser, data model, APIs, and resource controls.
+- [Migration to 2.0.0](docs/src/migration.md) lists the public API signature changes.
+- [Benchmark guide](benchmark/README.md) covers the benchmark and XMLConf catalog tools.
 
 ## Development
 
-Run the test system with:
-
-```sh
-sbcl --script run-tests.lisp
-```
-
-The reproducible Nix checks are:
-
-```sh
-nix flake check --all-systems --no-write-lock-file --print-build-logs --keep-going
-```
-
-Build the documentation locally with:
-
-```sh
-mkdocs build -f docs/mkdocs.yml --strict
-```
-
-The XMLConf catalog profile can be audited with the XMLConf runner described
-in [benchmark/README.md](benchmark/README.md).
+CI's `Check flake` step runs `nix flake check --print-build-logs`. The flake defines `checks.xmlconf`, `checks.coverage`, `checks.coverage-scanner-fixtures`, and `checks.parser-kit-load`.
 
 ## License
 
