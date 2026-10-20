@@ -14,6 +14,7 @@
  (:path "src/spans-records.lisp" :kind :expression :operator "DEFSTRUCT" :name "SPAN-TEXT" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in span-text.")
  (:path "src/tokenizer-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "%XML-TOKENIZER-STATE" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in the private xml-tokenizer state.")
  (:path "src/tokenizer-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-TOKENIZER" :action :test :owner :p3 :reason "Add tests for the generated constructor defaults in xml-tokenizer.")
+ (:path "src/tokenizer.lisp" :kind :expression :operator "DEFUN" :name "%XML-TOKENIZER-CREATE-PARSER-TOKENIZER" :action :test :owner :p3 :reason "Add focused tests for remaining parser-kit matcher paths in the tokenizer factory.")
  (:path "src/verify.lisp" :kind :expression :operator "DEFUN" :name "%EDIT-FINISH" :action :test :owner :p3 :reason "Add a test that omits :lenient-ordinals to exercise the %edit-finish default.")
  (:path "src/verify.lisp" :kind :expression :operator "DEFUN" :name "%EDIT-VERIFY" :action :test :owner :p3 :reason "Add a test that omits :lenient-ordinals to exercise the %edit-verify default.")
 )
