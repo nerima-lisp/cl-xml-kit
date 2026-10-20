@@ -16,8 +16,7 @@ The benchmark ASDF system depends on `cl-xml-kit`, `cl-weave`, and
 `cl-host-kit`; `cl-xml-kit` depends on `cl-codec-kit`. The flake supplies these
 dependencies for the command above.
 
-The controls are deterministic and enforce the minimum sample counts used for
-release measurements:
+The benchmark enforces minimums of 2 warmup rounds and 10 samples:
 
 | Variable | Default | Constraint |
 | --- | ---: | --- |
@@ -47,12 +46,17 @@ milliseconds, and allocation bytes.
 
 ## XMLConf
 
-The `xmlconf` flake check runs every selected case and compares the catalog
-counts and execution totals (passed, failed, and skipped cases) with fixed
-values in `flake.nix`. To inspect a downloaded XMLConf tree directly:
+The `xmlconf` flake check downloads the
+[XML Test Suite 20130923 archive](https://www.w3.org/XML/Test/xmlts20130923.tar.gz),
+runs every selected case, and compares the catalog counts and execution totals
+(passed, failed, and skipped cases) with fixed values in `flake.nix`. For a
+direct run, download the archive and extract it with
+`tar -xzf xmlts20130923.tar.gz`. From the repository root, run the direct
+runner in the Nix development shell, which provides its dependencies to ASDF.
+Set `XML_KIT_XMLCONF_DIR` to the extracted `xmlconf` directory:
 
 ```sh
-XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
+nix develop -c env XML_KIT_XMLCONF_DIR=/path/to/xmlconf \
   sbcl --script scripts/xmlconf-runner.lisp --run
 ```
 
@@ -74,24 +78,27 @@ reported as failed. An unknown option is a usage error (exit status 2);
 uses `cl-weave` coverage statistics and writes native coverage data to
 `coverage.dat` and an HTML report to `coverage-report/`. It enforces the
 measured minimums configured in `scripts/run-coverage.lisp`. The form-level
-exclusion manifest is `scripts/coverage-exclusions.sexp`; each uncovered form
-must have one entry with a non-empty reason, and entries for forms that are no
-longer uncovered fail the check.
+accounting manifests are `scripts/coverage-exclusions.sexp` and
+`scripts/coverage-follow-ups.sexp`. Each uncovered form must have exactly one
+entry across the two files, with a non-empty reason. Stale or overlapping
+entries fail the check.
 
 The mutation runner uses `cl-weave:run-mutations` with its default operators on
 the character-class predicates and `xml-digit-weight`. Its fixed targets are
 `xml-char-p`, `xml-space-char-p`, `xml-name-start-char-p`, `xml-name-char-p`,
 `xml-pubid-char-p`, `xml-ncname-start-char-p`, `xml-ncname-char-p`,
 `xml-space-p`, `xml-ncname-p`, and `xml-digit-weight`. It runs the existing
-focused tests for each function. Before mutation, it expands loop forms and
-rewrites the two value-discarded `NIL` branches from `LOOP ALWAYS`; flipping
-either branch is behaviorally equivalent. A complete focused run with a failed
+focused tests for each function. Before mutation, it expands the loop forms.
+The `LOOP ALWAYS` forms in `xml-space-p` and `xml-ncname-p` discard the `NIL`
+returned when a predicate succeeds, so the runner removes those no-op branches
+before applying mutations. Otherwise, mutating a discarded value could produce
+an equivalent mutant that does not change behavior. A complete focused run with a failed
 or errored test kills that mutant; an incomplete run, a surviving mutant, or a
-mutation runner error fails the gate. Run it from the repository root with
-dependencies available to ASDF:
+mutation runner error fails the gate. Run it from the repository root in the
+Nix development shell, which provides its dependencies to ASDF:
 
 ```sh
-sbcl --noinform --disable-debugger --script scripts/run-mutation.lisp
+nix develop -c sbcl --noinform --disable-debugger --script scripts/run-mutation.lisp
 ```
 
 The runner prints the total, killed, surviving, and errored mutant counts and
