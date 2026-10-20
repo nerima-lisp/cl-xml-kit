@@ -153,9 +153,15 @@
       (let* ((source "(defstruct rejected-dynamic-slot (policy (gensym)))")
              (owner (coverage-fixture-owner source))
              (uncovered
-               (list (coverage-fixture-expression
-                      source "(policy (gensym))"))))
+               (list (coverage-fixture-expression source "(policy (gensym))")
+                     (coverage-fixture-expression source "(gensym)"))))
         (check-fixture "dynamic slot initform" nil owner source uncovered t))
+      (let* ((source "(defstruct accepted-tested-dynamic-slot (state (make-state)))")
+             (owner (coverage-fixture-owner source))
+             (uncovered
+               (list (coverage-fixture-expression
+                      source "(state (make-state))"))))
+        (check-fixture "covered dynamic slot initform" t owner source uncovered))
       (let* ((source
                "(defun rejected-branch-kind (&key (policy :reject)) policy)")
              (owner (coverage-fixture-owner source))
@@ -211,7 +217,7 @@
                  (uncovered
                    (list (coverage-fixture-expression source "(compute-value)"))))
             (check-fixture "dynamic DEFSTRUCT constructor default" nil owner source uncovered)))))
-    (unless (and (= accepted 2) (= rejected 6) (= extended-accepted 11) (= extended-rejected 10))
+    (unless (and (= accepted 2) (= rejected 6) (= extended-accepted 12) (= extended-rejected 10))
       (error "Coverage scanner fixture counts differ: accepted=~D rejected=~D extended-accepted=~D extended-rejected=~D" accepted rejected extended-accepted extended-rejected))
     (progn (format t "coverage-scanner-fixtures accepted=~D rejected=~D~%" accepted rejected) (format t "coverage-scanner-fixtures extended accepted=~D rejected=~D~%" extended-accepted extended-rejected))))
 

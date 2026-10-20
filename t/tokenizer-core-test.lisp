@@ -57,7 +57,21 @@
       "refuses the tokenizer arguments ~S"
       (arguments message)
     (expect (lambda () (apply #'cl-xml-kit::make-xml-tokenizer arguments))
-            :to-signal-xml `(xml-input-error (xml-condition-message ,message)))))
+            :to-signal-xml `(xml-input-error (xml-condition-message ,message))))
+  (it "creates fresh state for each tokenizer"
+    (let* ((first-tokenizer (cl-xml-kit::make-xml-tokenizer "first"))
+           (second-tokenizer (cl-xml-kit::make-xml-tokenizer "second"))
+           (first-state (cl-xml-kit::%xml-tokenizer-state first-tokenizer))
+           (second-state (cl-xml-kit::%xml-tokenizer-state second-tokenizer)))
+      (expect (list (eq first-state second-state)
+                    (cl-xml-kit::%xml-tokenizer-state-index first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-line first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-line-start-index first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-tag-open-p first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-eof-returned first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-space-seen-p first-state)
+                    (cl-xml-kit::%xml-tokenizer-state-tag-phase first-state))
+              :to-equal (list nil 0 1 0 nil nil nil nil)))))
 
 (describe "cursor primitives"
   (it "peeks at the cursor character without consuming it and returns NIL at the end"

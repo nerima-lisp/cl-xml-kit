@@ -106,6 +106,8 @@
  (:path "src/spans-records.lisp" :kind :expression :operator "DEFSTRUCT" :name "SPAN-TEXT" :reason "Only literal slot initializer spans remain uncovered; structural validation restricts the exclusion to those exact defaults.")
  (:path "src/verify.lisp" :kind :expression :operator "DEFUN" :name "%EDIT-FINISH" :reason "Only the literal :lenient-ordinals default remains uncovered; omission tests cover runtime behavior and structural validation excludes function-body forms.")
  (:path "src/verify.lisp" :kind :expression :operator "DEFUN" :name "%EDIT-VERIFY" :reason "Only the literal :lenient-ordinals default remains uncovered; omission tests cover runtime behavior and structural validation excludes function-body forms.")
+ (:path "src/tokenizer-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "%XML-TOKENIZER-STATE" :reason "Only literal slot initializer spans remain uncovered; structural validation restricts the exclusion to those exact defaults.")
+ (:path "src/tokenizer-core.lisp" :kind :expression :operator "DEFSTRUCT" :name "XML-TOKENIZER" :reason "Tokenizer construction tests exercise the state constructor default; structural validation restricts exclusion to remaining literal slot defaults.")
 )
 
 

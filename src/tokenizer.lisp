@@ -76,7 +76,8 @@
                     (when (and (eq phase :after-quote)
                                (/= before (%xml-tokenizer-state-index state)))
                       (setf (%xml-tokenizer-state-space-seen-p state) t))
-                    (when (null (%xml-tokenizer-peek tokenizer))
+                    (when (or (eq phase :end-after-name)
+                              (null (%xml-tokenizer-peek tokenizer)))
                       (ecase phase
                         (:after-element-name
                          (%xml-tokenizer-next-attribute-name tokenizer nil))
@@ -115,11 +116,7 @@
                         (:after-quote
                          (multiple-value-bind (kind value start end)
                              (%xml-tokenizer-next-attribute-name tokenizer t)
-                           (values :after-attribute-name kind value start end)))
-                        (:end-after-name
-                         (multiple-value-bind (kind value start end)
-                             (%xml-tokenizer-next-end-tag-close tokenizer)
-                           (values :end-after-name kind value start end))))
+                           (values :after-attribute-name kind value start end))))
                     (declare (ignore start))
                     (setf (%xml-tokenizer-state-tag-phase state) next-phase
                           *xml-tokenizer-actual-token-kind* actual-kind)

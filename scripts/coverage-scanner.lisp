@@ -171,22 +171,36 @@
                   spans))))
       spans))
 
-  (defun coverage-scanner-defstruct-default-spans (source owner)
+  (defun coverage-scanner-defstruct-default-spans (source owner uncovered-forms)
     (labels ((slot-options-p (options)
-                             (cond
-                              ((null options) t)
-                              ((null (cdr options)) nil)
-                              (t
-                               (let ((option (getf (first options) :form))
-                                     (value (getf (second options) :form)))
-                                 (and (or (and (eq option :type)
-                                               (or (symbolp value)
-                                                   (and (consp value)
-                                                        (coverage-scanner-literal-datum-p
-                                                         value))))
-                                          (and (eq option :read-only)
-                                               (or (null value) (eq value t))))
-                                      (slot-options-p (cddr options))))))))
+               (cond
+                 ((null options) t)
+                 ((null (cdr options)) nil)
+                 (t
+                  (let ((option (getf (first options) :form))
+                        (value (getf (second options) :form)))
+                    (and (or (and (eq option :type)
+                                  (or (symbolp value)
+                                      (and (consp value)
+                                           (coverage-scanner-literal-datum-p value))))
+                             (and (eq option :read-only)
+                                  (or (null value) (eq value t))))
+                         (slot-options-p (cddr options)))))))
+             (dynamic-default-executed-p (default-span)
+               (let ((start (getf default-span :start))
+                     (end (getf default-span :end)))
+                 (and (consp (getf default-span :form))
+                      (integerp start)
+                      (integerp end)
+                      (not
+                       (some (lambda (uncovered)
+                               (let ((uncovered-start (getf uncovered :start))
+                                     (uncovered-end (getf uncovered :end)))
+                                 (and (integerp uncovered-start)
+                                      (integerp uncovered-end)
+                                      (<= start uncovered-start)
+                                      (<= uncovered-end end))))
+                             uncovered-forms))))))
       (let* ((elements (coverage-scanner-list-elements source owner))
              (slots (cddr elements)))
         (when (and slots (stringp (getf (first slots) :form)))
@@ -194,14 +208,18 @@
         (loop for slot in slots
               for form = (getf slot :form)
               for parts = (coverage-scanner-list-elements source slot)
+              for default-span = (second parts)
+              for default = (and default-span (getf default-span :form))
               when (and (coverage-scanner-proper-list-p form)
                         (consp form)
                         (symbolp (first form))
                         (>= (length form) 2)
-                        (coverage-scanner-literal-constant-p (second form))
-                        (second parts)
+                        default-span
+                        (or (coverage-scanner-literal-constant-p default)
+                            (dynamic-default-executed-p default-span))
                         (slot-options-p (cddr parts)))
               collect (cons (getf slot :start) (getf slot :end))))))
+
 
   (defun coverage-scanner-proper-list-p (form)
     (handler-case
@@ -300,7 +318,7 @@
                   ((and operator (string= operator "DEFUN"))
                    (coverage-scanner-defun-default-spans source owner))
                   ((and operator (string= operator "DEFSTRUCT"))
-                   (coverage-scanner-defstruct-default-spans source owner))))
+                   (coverage-scanner-defstruct-default-spans source owner uncovered-forms))))
          (default-only-p
            (and spans
                 uncovered-forms
